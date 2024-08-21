@@ -1,24 +1,32 @@
 ---
-name: "Meta Sync labels"
-on:
-  workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths: [".github/labels.yaml"]
+  name: "Meta Sync labels"
+  on:
+    workflow_dispatch:
+    push:
+      branches: ["main"]
+      paths: [".github/labels.yaml"]
 
-jobs:
-  labels:
-    name: Sync Labels
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up git repository
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          token: "${{ secrets.BOT_TOKEN }}"
+  jobs:
+    labels:
+      name: Sync Labels
+      runs-on: ubuntu-latest
+      steps:
+        - name: Generate PAT Token
+          uses: tibdex/github-app-token@v1.7 # v1.7.0
+          id: generate-pat
+          with:
+            app_id: "${{ secrets.BOT_APP_ID }}"
+            private_key: "${{ secrets.BOT_APP_PRIVATE_KEY }}"
+            installation_id: "${{ secrets.BOT_INSTALLATION_ID }}"
 
-      - name: Sync Labels
-        uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
-        with:
-          config-file: .github/labels.yaml
-          token: "${{ secrets.BOT_TOKEN }}"
-          delete-other-labels: true
+        - name: Set up git repository
+          uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+          with:
+            token: "${{ steps.generate-pat.outputs.token }}"
+
+        - name: Sync Labels
+          uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
+          with:
+            config-file: .github/labels.yaml
+            token: "${{ steps.generate-pat.outputs.token }}"
+            delete-other-labels: true
