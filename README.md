@@ -18,7 +18,7 @@ version: "3"
 
 includes:
   pre-commit:
-    taskfile: "https://raw.githubusercontent.com/l50/taskfile-templates/main/pre-commit/Taskfile.yaml"
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
 
 tasks:
   default:
