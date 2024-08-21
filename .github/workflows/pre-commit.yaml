@@ -45,4 +45,6 @@ jobs:
           task-version: 3.38.0
 
       - name: Run pre-commit
-        run: task run-pre-commit
+        run: |
+          export TASK_X_REMOTE_TASKFILES=1
+          task run-pre-commit
