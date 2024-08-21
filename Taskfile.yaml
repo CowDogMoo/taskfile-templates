@@ -1,0 +1,18 @@
+---
+version: "3"
+
+includes:
+  pre-commit: pre-commit/Taskfile.yaml
+
+tasks:
+  default:
+    desc: "Run default tasks"
+    cmds:
+      - task: run-pre-commit
+
+  run-pre-commit:
+    desc: "Update, clear cache, and run pre-commit hooks"
+    cmds:
+      - task: pre-commit:update-hooks
+      - task: pre-commit:clear-cache
+      - task: pre-commit:run-hooks

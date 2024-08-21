@@ -29,7 +29,16 @@ tasks:
 This will automatically pull in the `pre-commit` tasks from the remote
 repository and make them available in your project.
 
-### 2. Use the Tasks
+### 2. Enable remote taskfiles
+
+See the [Taskfile documentation](https://taskfile.dev/experiments/remote-taskfiles/)
+for more information.
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+```
+
+### 3. Use the Tasks
 
 Once you’ve included the Taskfile in your project, you can start using the
 tasks defined in it. For example:
