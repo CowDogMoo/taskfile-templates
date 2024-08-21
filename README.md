@@ -1,17 +1,17 @@
-# Taskfile Templates Repository
+# 📦 Taskfile Templates Repository
 
-This repository contains reusable Taskfile templates that can be included in
-other repositories to standardize and simplify common tasks like running
-pre-commit hooks, generating changelogs, and more.
+This repository contains reusable **Taskfile templates** to standardize and
+simplify common tasks like running pre-commit hooks, generating changelogs, and
+more.
 
-## Getting Started
+---
+
+## 🚀 Getting Started
 
 ### 1. Add the Remote Taskfile
 
-To use the Taskfile templates in your project, simply include the remote
-Taskfile in your project’s `Taskfile.yaml`.
-
-For example, to include the `pre-commit` Taskfile:
+To use the Taskfile templates in your project, include the remote Taskfile in
+your project’s `Taskfile.yaml`:
 
 ```yaml
 version: "3"
@@ -26,22 +26,21 @@ tasks:
       - task: pre-commit:update-hooks
 ```
 
-This will automatically pull in the `pre-commit` tasks from the remote
-repository and make them available in your project.
+This setup automatically pulls in the `pre-commit` tasks from the remote repository.
 
-### 2. Enable remote taskfiles
+### 2. Enable Remote Taskfiles
 
-See the [Taskfile documentation](https://taskfile.dev/experiments/remote-taskfiles/)
-for more information.
+Enable remote Taskfiles by setting this environment variable:
 
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 ```
 
+For more details, refer to the [Taskfile documentation](https://taskfile.dev/experiments/remote-taskfiles/).
+
 ### 3. Use the Tasks
 
-Once you’ve included the Taskfile in your project, you can start using the
-tasks defined in it. For example:
+Once you’ve included the Taskfile in your project, you can use the tasks like so:
 
 ```bash
 task pre-commit:update-hooks
@@ -49,22 +48,28 @@ task pre-commit:clear-cache
 task pre-commit:run-hooks
 ```
 
-These commands will run the respective tasks from the included Taskfile.
+---
 
-## Available Taskfiles
+## 📂 Available Taskfiles
 
-### Pre-Commit Tasks
+### 🔧 Pre-Commit Tasks
 
-The `pre-commit` Taskfile provides tasks to update, clear the cache, and run
-all pre-commit hooks locally.
+The `pre-commit` Taskfile provides the following tasks:
 
-## Contributing
+- **Update Hooks:** Automatically updates pre-commit hooks.
+- **Clear Cache:** Clears the pre-commit cache.
+- **Run Hooks:** Runs all pre-commit hooks locally.
 
-If you have additional tasks that you think would be useful for others, feel
-free to submit a pull request. Ensure that your Taskfiles are well-documented
-and follow the structure of the existing files.
+---
 
-## License
+## 🤝 Contributing
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE)
-file for details.
+Have an idea for a useful task? Submit a pull request! Ensure your Taskfiles
+are well-documented and follow the structure of existing files.
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file
+for details.
