@@ -16,3 +16,14 @@ tasks:
       - task: pre-commit:update-hooks
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
+
+  create-release:
+    desc: "Create a release on GitHub"
+    cmds:
+      - |
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+      - echo "Creating release $NEXT_VERSION"
+      - gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
