@@ -1,0 +1,35 @@
+---
+version: "3"
+
+tasks:
+  changelog-lint:
+    desc: "Lint the changelog"
+    cmds:
+      - antsibull-changelog lint
+
+  changelog-release:
+    desc: "Generate the changelog release"
+    cmds:
+      - antsibull-changelog release --version $NEXT_VERSION
+
+  lint-ansible:
+    desc: "Run Ansible Lint"
+    cmds:
+      - |
+        echo "Running ansible-lint."
+        ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
+    silent: true
+
+  run-molecule-tests:
+    desc: "Run Molecule tests for all roles"
+    cmds:
+      - |
+        mkdir -p logs
+        export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
+        for role in roles/*; do
+          if [[ -d "$role" ]]; then
+            echo "Running molecule tests for role $role"
+            (cd "$role" && molecule test) | tee -a logs/molecule_tests.log || exit 1
+          fi
+        done
+    silent: true
