@@ -1,0 +1,23 @@
+---
+version: "3"
+
+tasks:
+  create-release:
+    desc: "Create a release on GitHub"
+    cmds:
+      - |
+        # Check if GitHub CLI is installed
+        if ! command -v gh &> /dev/null; then
+          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
+          exit 1
+        fi
+
+        # Check if NEXT_VERSION is set
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+
+        # Create GitHub release
+        echo "Creating release $NEXT_VERSION"
+        gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
