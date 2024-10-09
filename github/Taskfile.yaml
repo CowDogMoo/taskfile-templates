@@ -108,11 +108,25 @@ tasks:
         # Deinitialize the specified submodule(s) from .gitmodules
         git submodule deinit -f -- "$SUBMODULE_PATH"
 
+        # Check if the deinit command was successful
+        if [ $? -ne 0 ]; then
+          echo "Failed to deinitialize submodule at $SUBMODULE_PATH."
+          exit 1
+        fi
+
         # Remove the submodule directory from the Git repository
-        rm -rf ".git/modules/$SUBMODULE_PATH"
+        if [ -d ".git/modules/$SUBMODULE_PATH" ]; then
+          rm -rf ".git/modules/$SUBMODULE_PATH"
+        fi
 
         # Remove the submodule directory from the working tree
         git rm -rf "$SUBMODULE_PATH"
+
+        # Check if the git rm command was successful
+        if [ $? -ne 0 ]; then
+          echo "Failed to remove submodule directory at $SUBMODULE_PATH from working tree."
+          exit 1
+        fi
 
         # Clean up .gitmodules file if any submodule references remain
         git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH" || true
@@ -120,7 +134,9 @@ tasks:
         # Sync the submodule paths in .gitmodules to reflect the changes
         git submodule sync
 
-        # Commit the changes to remove the submodule(s)
-        git commit -m "Removed submodule(s) at $SUBMODULE_PATH"
+        # Check if there are any changes to commit
+        if git diff --cached --quiet; then
+          echo "No changes to commit. Submodule removal may not have made any modifications."
+        fi
     requires:
       vars: ['SUBMODULE_PATH']
