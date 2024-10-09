@@ -131,7 +131,9 @@ tasks:
         fi
 
         # Clean up .gitmodules file if any submodule references remain
-        git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH" || true
+        if git config -f .gitmodules --get-regexp "submodule\.$SUBMODULE_PATH" > /dev/null 2>&1; then
+          git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH"
+        fi
 
         # Sync the submodule paths in .gitmodules to reflect the changes
         git submodule sync
