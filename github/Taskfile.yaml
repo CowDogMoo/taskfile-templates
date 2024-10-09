@@ -2,7 +2,7 @@
 version: "3"
 
 tasks:
-  add-github-submodules:
+  add-git-submodules:
     desc: "Add submodules from GitHub based on a naming pattern using gh cli"
     deps:
       - check-gh-cli
@@ -91,12 +91,10 @@ tasks:
         echo "Creating release $NEXT_VERSION"
         gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
 
-  remove-github-submodules:
-    desc: "Remove one or more GitHub submodules and clean up related files"
+  remove-git-submodules:
+    desc: "Remove one or more submodules and clean up related files"
     deps:
       - check-gh-cli
-    vars:
-      SUBMODULE_PATH: "" # Define the path to the submodule(s) to remove
     silent: true
     cmds:
       - |
@@ -126,3 +124,5 @@ tasks:
 
         # Commit the changes to remove the submodule(s)
         git commit -m "Removed submodule(s) at $SUBMODULE_PATH"
+    # requires:
+    #   vars: ['SUBMODULE_PATH']
