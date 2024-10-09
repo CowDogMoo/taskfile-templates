@@ -6,10 +6,6 @@ tasks:
     desc: "Add submodules from GitHub based on a naming pattern using gh cli"
     deps:
       - check-gh-cli
-    vars:
-      ORG: "" # Define the GitHub organization
-      REGEXP: "" # Define the regular expression to match repositories
-      TARGET_DIR: "" # Define the target directory for submodules
     silent: true
     cmds:
       - |
@@ -62,6 +58,8 @@ tasks:
 
         # Sync the submodule paths in .gitmodules
         git submodule sync
+    requires:
+      vars: ['ORG', 'REGEXP', 'TARGET_DIR']
 
   check-gh-cli:
     desc: "Validate that the GitHub CLI (gh) is installed"
@@ -77,8 +75,6 @@ tasks:
     desc: "Create a release on GitHub"
     deps:
       - check-gh-cli
-    vars:
-      NEXT_VERSION: "" # Define the next version to release
     cmds:
       - |
         # Check if NEXT_VERSION is set
@@ -90,6 +86,8 @@ tasks:
         # Create GitHub release
         echo "Creating release $NEXT_VERSION"
         gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
+    requires:
+      vars: ['NEXT_VERSION']
 
   remove-git-submodules:
     desc: "Remove one or more submodules and clean up related files"
@@ -124,5 +122,5 @@ tasks:
 
         # Commit the changes to remove the submodule(s)
         git commit -m "Removed submodule(s) at $SUBMODULE_PATH"
-    # requires:
-    #   vars: ['SUBMODULE_PATH']
+    requires:
+      vars: ['SUBMODULE_PATH']
