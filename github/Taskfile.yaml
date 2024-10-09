@@ -41,7 +41,9 @@ tasks:
         response=$(gh api graphql -F query='query { repositoryOwner(login:"{{.ORG}}") { repositories(first: 100) { nodes { name url } } } }')
 
         # Debugging output to check the response
-        echo "GraphQL response: $response"
+        if [[ -n "$DEBUG" && "$DEBUG" == "true" ]]; then
+          echo "GraphQL response: $response"
+        fi
 
         if [[ -z "$response" || "$response" == "null" ]]; then
           echo "Error: No response from GitHub API. Please check the organization name and your GitHub authentication."
