@@ -1,0 +1,123 @@
+---
+version: "3"
+
+tasks:
+  check-terraform:
+    desc: "Validate that Terraform is installed"
+    cmds:
+      - |
+        if ! command -v terraform &> /dev/null; then
+          echo "'terraform' command not found. Please install Terraform: https://www.terraform.io/downloads.html"
+          exit 1
+        fi
+    silent: true
+
+  check-terragrunt:
+    desc: "Validate that Terragrunt is installed"
+    cmds:
+      - |
+        if ! command -v terragrunt &> /dev/null; then
+          echo "'terragrunt' command not found. Please install Terragrunt: https://terragrunt.gruntwork.io"
+          exit 1
+        fi
+    silent: true
+
+  terragrunt-apply:
+    desc: "Apply a specific module in a specific environment using Terragrunt, or run a default apply if no input is provided"
+    deps:
+      - check-terraform
+      - check-terragrunt
+    vars:
+      DEPLOYMENT: "" # Define the deployment (e.g., crucible)
+      ENV: "" # Define the environment (e.g., dev, prod)
+      REGION: "" # Define the region (e.g., us-east-2)
+      MODULE: "" # Define the module (e.g., terraform-crucible-network)
+    cmds:
+      - |
+        if [ -z "{{.DEPLOYMENT}}" ] && [ -z "{{.ENV}}" ] && [ -z "{{.REGION}}" ] && [ -z "{{.MODULE}}" ]; then
+          echo "Running default apply for all modules..."
+          terragrunt run-all apply \
+          -auto-approve \
+          --terragrunt-non-interactive \
+          -lock=false \
+          --terragrunt-working-dir dread-infra
+        else
+          if [ -z "{{.DEPLOYMENT}}" ] || [ -z "{{.ENV}}" ] || [ -z "{{.REGION}}" ] || [ -z "{{.MODULE}}" ]; then
+            echo "Please provide all required variables: DEPLOYMENT, ENV, REGION, and MODULE."
+            exit 1
+          fi
+          CONFIG_PATH="dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}/terragrunt.hcl"
+          if [ ! -f $CONFIG_PATH ]; then
+            echo "Terragrunt config not found at $CONFIG_PATH. Please check paths."
+            exit 1
+          fi
+          terragrunt apply \
+          -auto-approve \
+          --terragrunt-non-interactive \
+          -lock=false \
+          --terragrunt-working-dir dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}
+        fi
+
+  terragrunt-destroy:
+    desc: "Destroy a specific module in a specific environment using Terragrunt, or run a default destroy if no input is provided"
+    deps:
+      - check-terraform
+      - check-terragrunt
+    vars:
+      DEPLOYMENT: "" # Define the deployment (e.g., crucible)
+      ENV: "" # Define the environment (e.g., dev, prod)
+      REGION: "" # Define the region (e.g., us-east-2)
+      MODULE: "" # Define the module (e.g., terraform-crucible-network)
+    cmds:
+      - |
+        if [ -z "{{.DEPLOYMENT}}" ] && [ -z "{{.ENV}}" ] && [ -z "{{.REGION}}" ] && [ -z "{{.MODULE}}" ]; then
+          echo "Running default destroy for all modules..."
+          terragrunt run-all destroy \
+          -auto-approve \
+          --terragrunt-non-interactive \
+          -lock=false \
+          --terragrunt-working-dir dread-infra
+        else
+          if [ -z "{{.DEPLOYMENT}}" ] || [ -z "{{.ENV}}" ] || [ -z "{{.REGION}}" ] || [ -z "{{.MODULE}}" ]; then
+            echo "Please provide all required variables: DEPLOYMENT, ENV, REGION, and MODULE."
+            exit 1
+          fi
+          CONFIG_PATH="dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}/terragrunt.hcl"
+          if [ ! -f $CONFIG_PATH ]; then
+            echo "Terragrunt config not found at $CONFIG_PATH. Please check paths."
+            exit 1
+          fi
+          terragrunt destroy \
+          -auto-approve \
+          --terragrunt-non-interactive \
+          -lock=false \
+          --terragrunt-working-dir dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}
+        fi
+
+  run-terratest:
+    desc: "Run Terratest for infrastructure testing"
+    deps:
+      - check-terraform
+    vars:
+      TIMEOUT: "60m"
+    cmds:
+      - |
+        cd test
+        go mod tidy
+        go test -v -timeout={{.TIMEOUT}}
+
+  validate:
+    desc: "Run Terraform validate to ensure configuration is syntactically correct"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        terraform validate
+
+  format:
+    desc: "Format Terraform code"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        terraform fmt -recursive

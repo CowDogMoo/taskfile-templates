@@ -29,7 +29,8 @@ tasks:
       - task: github:create-release
 ```
 
-This setup automatically pulls in both the `pre-commit` and `github` tasks from the remote repository.
+This setup automatically pulls in both the `pre-commit` and `github` tasks from
+the remote repository.
 
 ### 2. Enable Remote Taskfiles
 
@@ -64,13 +65,25 @@ The `pre-commit` Taskfile provides the following tasks:
 - **Clear Cache:** Clears the pre-commit cache.
 - **Run Hooks:** Runs all pre-commit hooks locally.
 
+### ☁️ Terraform Tasks
+
+- **check-terraform:** Validate that Terraform is installed.
+- **check-terragrunt:** Validate that Terragrunt is installed.
+- **terragrunt-apply:** Apply a specific module in a specific environment using Terragrunt.
+- **terragrunt-destroy:** Destroy a specific module in a specific environment
+  using Terragrunt.
+- **run-terratest:** Run Terratest for infrastructure testing.
+- **validate:** Run Terraform validate to ensure configuration is syntactically correct.
+- **format:** Format Terraform code.
+
 ### 🏷️ GitHub Tasks
 
 The `github` Taskfile provides the following tasks:
 
-- **Create Release:** Creates a new release on GitHub using the `gh` CLI.
-  It validates that the `gh` command is installed and checks that the
-  `NEXT_VERSION` environment variable is set before proceeding with the release.
+- **add-git-submodule:** Add a new submodule to the repository.
+- **check-gh-cli:** Validate that the `gh` CLI is installed.
+- **create-release:** Creates a new release on GitHub using the `gh` CLI.
+- **remove-git-submodules:** Remove specified submodule(s) from the repository
 
 ---
 
