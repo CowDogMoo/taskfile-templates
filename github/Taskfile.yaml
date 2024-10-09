@@ -28,19 +28,36 @@ tasks:
         fi
 
         # Create the target directory if it doesn't exist
-        mkdir -p {{.TARGET_DIR}}
+        if [ -n "{{.TARGET_DIR}}" ]; then
+          mkdir -p "{{.TARGET_DIR}}"
+        fi
 
         # Clean up any existing submodule directories that may cause conflicts
-        for repo in $(ls | grep '{{.REGEXP}}'); do
-          if [ -d "$repo" ]; then
-            rm -rf "$repo"
-          fi
-        done
+        if [ -n "{{.REGEXP}}" ]; then
+          for repo in $(ls | grep '{{.REGEXP}}'); do
+            if [ -d "$repo" ]; then
+              rm -rf "$repo"
+            fi
+          done
+        fi
+
+        # Fetch the repository URLs and add them as submodules
+        response=$(gh api graphql -F query='query { repositoryOwner(login:"{{.ORG}}") { repositories(first: 100) { nodes { name url } } } }')
+
+        # Debugging output to check the response
+        echo "GraphQL response: $response"
+
+        if [[ -z "$response" || "$response" == "null" ]]; then
+          echo "Error: No response from GitHub API. Please check the organization name and your GitHub authentication."
+          exit 1
+        fi
 
         # Use the gh-submodule-add extension to add all matching submodules with proper options
-        gh api graphql -F query='query { repositoryOwner(login:"{{.ORG}}") { repositories(first: 100) { nodes { name url } } } }' | jq -r '.data.repositoryOwner.repositories.nodes[] | select(.name | test("{{.REGEXP}}")) | .url' | while read -r repo_url; do
-          repo_name=$(basename "$repo_url")
-          git submodule add "$repo_url" "{{.TARGET_DIR}}/$repo_name"
+        echo "$response" | jq -r '.data.repositoryOwner.repositories.nodes[]? | select(.name | test("{{.REGEXP}}")) | .url' | while read -r repo_url; do
+          if [ -n "$repo_url" ]; then
+            repo_name=$(basename "$repo_url")
+            git submodule add "$repo_url" "{{.TARGET_DIR}}/$repo_name"
+          fi
         done
 
         # Sync the submodule paths in .gitmodules
@@ -87,7 +104,7 @@ tasks:
         export SUBMODULE_PATH="{{.SUBMODULE_PATH}}"
 
         # Validate that the submodule path is provided
-        if [[ -z "$SUBMODULE_PATH" ]]; then
+        if [ -z "$SUBMODULE_PATH" ]; then
           echo "Submodule path is required. Set the SUBMODULE_PATH variable."
           exit 1
         fi
@@ -99,7 +116,7 @@ tasks:
         rm -rf ".git/modules/$SUBMODULE_PATH"
 
         # Remove the submodule directory from the working tree
-        git rm -f "$SUBMODULE_PATH"
+        git rm -rf "$SUBMODULE_PATH"
 
         # Clean up .gitmodules file if it still contains any submodule references
         git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH" || true
