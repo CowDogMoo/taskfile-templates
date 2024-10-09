@@ -15,4 +15,4 @@ tasks:
   run-hooks:
     desc: "Run all pre-commit hooks locally"
     cmds:
-      - pre-commit run --all-files
+      - pre-commit run --all-files --show-diff-on-failure
