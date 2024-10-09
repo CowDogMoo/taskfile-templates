@@ -73,3 +73,39 @@ tasks:
         # Create GitHub release
         echo "Creating release $NEXT_VERSION"
         gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
+
+  remove-github-submodule:
+    desc: "Remove a GitHub submodule and clean up related files"
+    deps:
+      - check-gh-cli
+    vars:
+      SUBMODULE_PATH: "" # Define the path to the submodule to remove
+    silent: true
+    cmds:
+      - |
+        # Set the submodule path variable
+        export SUBMODULE_PATH="{{.SUBMODULE_PATH}}"
+
+        # Validate that the submodule path is provided
+        if [[ -z "$SUBMODULE_PATH" ]]; then
+          echo "Submodule path is required. Set the SUBMODULE_PATH variable."
+          exit 1
+        fi
+
+        # Remove the submodule entry from .gitmodules
+        git submodule deinit -f -- "$SUBMODULE_PATH"
+
+        # Remove the submodule directory from the repository
+        rm -rf ".git/modules/$SUBMODULE_PATH"
+
+        # Remove the submodule directory from the working tree
+        git rm -f "$SUBMODULE_PATH"
+
+        # Clean up .gitmodules file if it still contains any submodule references
+        git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH" || true
+
+        # Sync the submodule paths in .gitmodules
+        git submodule sync
+
+        # Commit the changes
+        git commit -m "Removed submodule at $SUBMODULE_PATH"
