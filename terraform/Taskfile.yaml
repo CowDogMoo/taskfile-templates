@@ -99,11 +99,13 @@ tasks:
     deps:
       - check-terraform
     vars:
-      TIMEOUT: "60m"
+      TIMEOUT: '{{.TIMEOUT | default "60m"}}'
+      DESTROY: '{{.DESTROY | default "true"}}'
     cmds:
       - |
         cd test
         go mod tidy
+        export TERRATEST_DESTROY={{.DESTROY}}
         go test -v -timeout={{.TIMEOUT}}
 
   validate:
