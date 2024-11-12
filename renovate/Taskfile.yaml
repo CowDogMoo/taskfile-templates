@@ -16,10 +16,22 @@ tasks:
         fi
     silent: true
 
+  check-repository-format:
+    desc: "Validate repository format matches org/repo pattern"
+    cmds:
+      - |
+        if [[ ! "{{.REPOSITORY}}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+          echo "Error: Repository format must be 'org/repo'. Got: {{.REPOSITORY}}"
+          echo "Example: microsoft/vscode"
+          exit 1
+        fi
+    silent: true
+
   renovate-docker-debug:
     desc: "Run Renovate in a Docker container with debugging enabled"
     deps:
       - check-docker
+      - check-repository-format
     cmds:
       - |
         # Ensure required environment variables are set
@@ -30,6 +42,18 @@ tasks:
 
         # Create cache directory if it doesn't exist
         mkdir -p .cache
+
+        # Extract org and repo for potential use in validation
+        ORG=$(echo "{{.REPOSITORY}}" | cut -d'/' -f1)
+        REPO=$(echo "{{.REPOSITORY}}" | cut -d'/' -f2)
+
+        # Additional repository existence check if requested
+        if [ "{{.VALIDATE_REPO | default "true"}}" = "true" ] && [ "{{.PLATFORM | default "github"}}" = "github" ]; then
+          if ! gh repo view "{{.REPOSITORY}}" &>/dev/null; then
+            echo "Error: Repository {{.REPOSITORY}} not found or not accessible"
+            exit 1
+          fi
+        fi
 
         # Run Renovate in Docker with configurable parameters
         docker run --rm -it \
