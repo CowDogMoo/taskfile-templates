@@ -12,6 +12,10 @@ tasks:
           -e RENOVATE_CONFIG_FILE="/usr/src/app/renovate.json5" \
           -e RENOVATE_DEBUG=true \
           -e RENOVATE_LOG_FILEFORMAT=true \
+          -e RENOVATE_BASE_DIR="/tmp/renovate/repository" \
+          -e RENOVATE_DEFAULT_BRANCH="main" \
+          -e RENOVATE_GIT_AUTHOR="Renovate Bot <bot@renovateapp.com>" \
+          -e RENOVATE_REPOSITORY_DIRTY=false \
           -v "${PWD}/.github/renovate.json5:/usr/src/app/renovate.json5" \
           -v "${PWD}:/tmp/renovate/repository" \
           -v "${PWD}/.cache:/tmp/renovate/cache" \
@@ -20,4 +24,6 @@ tasks:
           renovate \
           --platform=local \
           --dry-run=full \
+          --base-dir="/tmp/renovate/repository" \
+          --git-fs=true \
           --print-config=true | tee renovate-debug.log
