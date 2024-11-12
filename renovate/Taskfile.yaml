@@ -1,0 +1,23 @@
+---
+version: "3"
+
+tasks:
+  renovate-docker-debug:
+    desc: "Run Renovate in a Docker container with debugging enabled"
+    cmds:
+      - |
+        docker run --rm -it \
+          -e LOG_LEVEL=trace \
+          -e RENOVATE_LOCAL_DIR="/tmp/renovate/repository" \
+          -e RENOVATE_CONFIG_FILE="/usr/src/app/renovate.json5" \
+          -e RENOVATE_DEBUG=true \
+          -e RENOVATE_LOG_FILEFORMAT=true \
+          -v "${PWD}/.github/renovate.json5:/usr/src/app/renovate.json5" \
+          -v "${PWD}:/tmp/renovate/repository" \
+          -v "${PWD}/.cache:/tmp/renovate/cache" \
+          --user=$(id -u):$(id -g) \
+          renovate/renovate:39.11.4 \
+          renovate \
+          --platform=local \
+          --dry-run=full \
+          --print-config=true | tee renovate-debug.log
