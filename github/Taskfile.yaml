@@ -144,3 +144,40 @@ tasks:
         fi
     requires:
       vars: ['SUBMODULE_PATH']
+
+  merge-pull-requests:
+    desc: "Squash and merge all pull requests that have 'All checks have passed'"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Fetch all open pull requests with debug output
+        echo "Fetching open pull requests..."
+        raw_prs=$(gh pr list --state open --json number,statusCheckRollup)
+        echo "Raw PR data: $raw_prs"
+
+        # Extract PR numbers with all checks passed
+        open_prs=$(echo "$raw_prs" | jq -r ".[] | select(.statusCheckRollup != null and (.statusCheckRollup | map(select(.status == \"COMPLETED\" and .conclusion == \"SUCCESS\")) | length > 0)) | .number")
+
+        echo "PRs with all checks passed: $open_prs"
+
+        if [ -z "$open_prs" ]; then
+          echo "No pull requests found with all checks passed."
+          exit 0
+        fi
+
+        for pr_number in $open_prs; do
+          echo "Attempting to squash and merge PR #$pr_number..."
+
+          # Try to merge the pull request with squash
+          if gh pr merge $pr_number --squash --delete-branch --auto; then
+            echo "Successfully merged PR #$pr_number."
+          else
+            echo "Failed to merge PR #$pr_number due to conflicts or other issues. Skipping to the next PR."
+          fi
+
+        done
+
+        echo "Completed attempting to merge all qualifying pull requests."
+    requires:
+      vars: []
