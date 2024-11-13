@@ -11,17 +11,15 @@ creating GitHub releases, and more.
 ### 1. Add the Remote Taskfiles
 
 To use the Taskfile templates in your project, include the remote Taskfiles in
-your project’s `Taskfile.yaml`:
+your project's `Taskfile.yaml`:
 
 ```yaml
 version: "3"
-
 includes:
   pre-commit:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
-
 tasks:
   default:
     cmds:
@@ -44,7 +42,7 @@ For more details, refer to the [Taskfile documentation](https://taskfile.dev/exp
 
 ### 3. Use the Tasks
 
-Once you’ve included the Taskfiles in your project, you can use the tasks like so:
+Once you've included the Taskfiles in your project, you can use the tasks like so:
 
 ```bash
 task pre-commit:update-hooks
@@ -80,10 +78,19 @@ The `pre-commit` Taskfile provides the following tasks:
 
 The `github` Taskfile provides the following tasks:
 
-- **add-git-submodule:** Add a new submodule to the repository.
-- **check-gh-cli:** Validate that the `gh` CLI is installed.
-- **create-release:** Creates a new release on GitHub using the `gh` CLI.
-- **remove-git-submodules:** Remove specified submodule(s) from the repository
+- **add-git-submodules:** Add submodules from GitHub based on a naming pattern. Requires:
+  - `ORG`: GitHub organization name
+  - `REGEXP`: Regular expression to match repository names
+  - `TARGET_DIR`: Directory to store submodules
+- **check-gh-cli:** Validate that the GitHub CLI (`gh`) is installed
+- **create-release:** Create a new release on GitHub using the changelog. Requires:
+  - `NEXT_VERSION`: Version number for the release (e.g., "1.0.0")
+- **remove-git-submodules:** Remove and clean up specified submodules. Requires:
+  - `SUBMODULE_PATH`: Path to the submodule to remove
+- **merge-pull-requests:** Manage open pull requests by:
+  - Squashing and merging PRs with all checks passing
+  - Closing PRs with failing checks or conflicts
+  - Deleting branches after merge or close
 
 ---
 
