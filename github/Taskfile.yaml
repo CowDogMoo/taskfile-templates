@@ -146,7 +146,7 @@ tasks:
       vars: ['SUBMODULE_PATH']
 
   merge-pull-requests:
-    desc: "Squash and merge all eligible pull requests, closing conflicting ones"
+    desc: "Squash and merge all eligible pull requests with all checks passing, closing conflicting ones"
     deps:
       - check-gh-cli
     cmds:
@@ -158,18 +158,26 @@ tasks:
 
         # Process PRs with successful checks and handle conflicts
         echo "$raw_prs" | jq -r '.[] | select(.statusCheckRollup != null) |
-          {number: .number, headRefName: .headRefName, mergeable: .mergeable,
-          checksPass: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length > 0)} |
+          {
+            number: .number,
+            headRefName: .headRefName,
+            mergeable: .mergeable,
+            totalChecks: (.statusCheckRollup | length),
+            passingChecks: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length),
+            checksPass: (.statusCheckRollup | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
+          } |
           @json' | while read -r pr_info; do
 
           pr_number=$(echo "$pr_info" | jq -r '.number')
           branch_name=$(echo "$pr_info" | jq -r '.headRefName')
           mergeable=$(echo "$pr_info" | jq -r '.mergeable')
+          total_checks=$(echo "$pr_info" | jq -r '.totalChecks')
+          passing_checks=$(echo "$pr_info" | jq -r '.passingChecks')
           checks_pass=$(echo "$pr_info" | jq -r '.checksPass')
 
           echo "Processing PR #$pr_number (Branch: $branch_name)"
           echo "Mergeable status: $mergeable"
-          echo "Checks passing: $checks_pass"
+          echo "Checks status: $passing_checks of $total_checks passing"
 
           if [ "$mergeable" = "CONFLICTING" ]; then
             echo "PR #$pr_number has conflicts. Closing PR and deleting branch..."
@@ -189,7 +197,7 @@ tasks:
               echo "Failed to merge PR #$pr_number despite being marked as mergeable"
             fi
           else
-            echo "Skipping PR #$pr_number - not ready for merge (checks passing: $checks_pass, mergeable: $mergeable)"
+            echo "Skipping PR #$pr_number - not ready for merge (all checks passing: $checks_pass, mergeable: $mergeable)"
           fi
         done
 
