@@ -50,11 +50,23 @@ tasks:
           exit 1
         fi
 
-        # Use the gh-submodule-add extension to add all matching submodules with proper options
+        # Process each repository URL and add as submodules with deduped paths
         echo "$response" | jq -r '.data.repositoryOwner.repositories.nodes[]? | select(.name | test("{{.REGEXP}}")) | .url' | while read -r repo_url; do
           if [ -n "$repo_url" ]; then
             repo_name=$(basename "$repo_url")
-            git submodule add "$repo_url" "{{.TARGET_DIR}}/$repo_name"
+            target_path="{{.TARGET_DIR}}"
+
+            # Check if the target path ends with the repo name
+            if [[ "${target_path##*/}" == "$repo_name" ]]; then
+              # Use the parent path instead
+              target_path="${target_path%/*}"
+            fi
+
+            # Ensure target path exists
+            mkdir -p "$target_path"
+
+            # Add the submodule
+            git submodule add "$repo_url" "$target_path/$repo_name"
           fi
         done
 
