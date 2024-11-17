@@ -74,7 +74,24 @@ task terraform:terragrunt-destroy \
 
 ### run-terratest
 
-Runs Terratest infrastructure tests. Supports customizable timeout and destroy behavior.
+Runs Terratest infrastructure tests. The `run-terratest` task supports the
+following variables with defaults:
+
+- `TIMEOUT`: Default is `60m`
+- `DESTROY`: Default is `true`
+- `VERBOSE`: Default is `false`
+- `LOG_TO_FILE`: Default is `false`
+- `LOG_PATH`: Default is `/tmp/terratest.log`
+
+When `VERBOSE` is set to `true`, it will:
+
+- Enable Terraform debug logging (`TF_LOG=DEBUG`)
+- Run tests with verbose Go testing flags
+
+When `LOG_TO_FILE` is set to `true`, it will:
+
+- Save Terraform logs to `./terraform.log` (if `VERBOSE` is also `true`)
+- Save test output to the specified `LOG_PATH`
 
 **Basic usage:**
 
@@ -82,10 +99,14 @@ Runs Terratest infrastructure tests. Supports customizable timeout and destroy b
 export TASK_X_REMOTE_TASKFILES=1 && task terraform:run-terratest -y
 ```
 
-**With custom timeout and destroy flag:**
+**With custom options:**
+
+This example runs Terratest with a 30-minute timeout, verbose output, and logs
+to disk.
 
 ```bash
-export TASK_X_REMOTE_TASKFILES=1 && task terraform:run-terratest TIMEOUT=30m DESTROY=false -y
+export TASK_X_REMOTE_TASKFILES=1 && \
+  task terraform:run-terratest -y TIMEOUT=30m DESTROY=false VERBOSE=true LOG_TO_FILE=true
 ```
 
 ### validate
@@ -110,6 +131,14 @@ task terraform:format
 
 ```bash
 export TASK_X_REMOTE_TASKFILES=1 && task terraform:run-terratest DESTROY=false
+```
+
+1. **Running Terratest without destroying infrastructure, with verbose output
+   and logging to disk:**
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1 && task terraform:run-terratest DESTROY=false \
+  VERBOSE=true -y | tee /tmp/output.log
 ```
 
 1. **Applying a specific module in development:**

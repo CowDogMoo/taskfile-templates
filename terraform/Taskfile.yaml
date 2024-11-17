@@ -102,17 +102,29 @@ tasks:
       TIMEOUT: '{{.TIMEOUT | default "60m"}}'
       DESTROY: '{{.DESTROY | default "true"}}'
       VERBOSE: '{{.VERBOSE | default "false"}}'
+      LOG_TO_FILE: '{{.LOG_TO_FILE | default "false"}}'
+      LOG_PATH: '{{.LOG_PATH | default "/tmp/terratest.log"}}'
     cmds:
       - |
         cd test
         go mod tidy
         export TERRATEST_DESTROY={{.DESTROY}}
+
+        # Set up logging based on verbosity and logging preferences
         if [ "{{.VERBOSE}}" = "true" ]; then
           export TF_LOG=DEBUG
-          export TF_LOG_PATH=./terraform.log
-          go test -v -test.v -timeout={{.TIMEOUT}} | tee test.log
+          if [ "{{.LOG_TO_FILE}}" = "true" ]; then
+            export TF_LOG_PATH=./terraform.log
+            go test -v -test.v -timeout={{.TIMEOUT}} | tee {{.LOG_PATH}}
+          else
+            go test -v -test.v -timeout={{.TIMEOUT}}
+          fi
         else
-          go test -timeout={{.TIMEOUT}} | tee test.log
+          if [ "{{.LOG_TO_FILE}}" = "true" ]; then
+            go test -timeout={{.TIMEOUT}} | tee {{.LOG_PATH}}
+          else
+            go test -timeout={{.TIMEOUT}}
+          fi
         fi
 
   validate:
