@@ -76,75 +76,112 @@ tasks:
         echo "To push the release, run: git push origin v${NEXT_VERSION}"
 
   terragrunt-apply:
-    desc: "Apply a specific module in a specific environment using Terragrunt, or run a default apply if no input is provided"
+    desc: "Apply a specific module in a specific environment using Terragrunt"
     deps:
       - check-terraform
       - check-terragrunt
     vars:
-      DEPLOYMENT: "" # Define the deployment
-      ENV: "" # Define the environment
-      REGION: "" # Define the region
-      MODULE: "" # Define the module
+      DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
+      ENV: '{{.ENV | default ""}}'
+      MODULE: '{{.MODULE | default ""}}'
+      REGION: '{{.REGION | default ""}}'
     cmds:
       - |
-        if [ -z "{{.DEPLOYMENT}}" ] && [ -z "{{.ENV}}" ] && [ -z "{{.REGION}}" ] && [ -z "{{.MODULE}}" ]; then
+        # Check for required environment variables
+        if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+          echo "Please provide all required variables: DEPLOYMENT, ENV, and REGION"
+          exit 1
+        fi
+
+        BASE_PATH="dread-infra/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        # If MODULE is specified, run for specific module
+        if [ ! -z "{{ .MODULE }}" ]; then
+          echo "Running apply for module: {{ .MODULE }}"
+          terragrunt apply \
+            -auto-approve \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "${BASE_PATH}/{{ .MODULE }}"
+        else
           echo "Running default apply for all modules..."
           terragrunt run-all apply \
-          -auto-approve \
-          --terragrunt-non-interactive \
-          -lock=false \
-          --terragrunt-working-dir dread-infra
+            -auto-approve \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "$BASE_PATH"
+        fi
+
+  terragrunt-init:
+    desc: "Initialize a specific module in a specific environment using Terragrunt"
+    deps:
+      - check-terraform
+      - check-terragrunt
+    vars:
+      DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
+      ENV: '{{.ENV | default ""}}'
+      MODULE: '{{.MODULE | default ""}}'
+      REGION: '{{.REGION | default ""}}'
+    cmds:
+      - |
+        # Check for required environment variables
+        if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+          echo "Please provide all required variables: DEPLOYMENT, ENV, and REGION"
+          exit 1
+        fi
+
+        BASE_PATH="dread-infra/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        # If MODULE is specified, run for specific module
+        if [ ! -z "{{ .MODULE }}" ]; then
+          echo "Running init for module: {{ .MODULE }}"
+          terragrunt init \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "${BASE_PATH}/{{ .MODULE }}"
         else
-          if [ -z "{{.DEPLOYMENT}}" ] || [ -z "{{.ENV}}" ] || [ -z "{{.REGION}}" ] || [ -z "{{.MODULE}}" ]; then
-            echo "Please provide all required variables: DEPLOYMENT, ENV, REGION, and MODULE."
-            exit 1
-          fi
-          CONFIG_PATH="dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}/terragrunt.hcl"
-          if [ ! -f $CONFIG_PATH ]; then
-            echo "Terragrunt config not found at $CONFIG_PATH. Please check paths."
-            exit 1
-          fi
-          terragrunt apply \
-          -auto-approve \
-          --terragrunt-non-interactive \
-          -lock=false \
-          --terragrunt-working-dir dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}
+          echo "Running default init for all modules..."
+          terragrunt run-all init \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "$BASE_PATH"
         fi
 
   terragrunt-destroy:
-    desc: "Destroy a specific module in a specific environment using Terragrunt, or run a default destroy if no input is provided"
+    desc: "Destroy a specific module in a specific environment using Terragrunt"
     deps:
       - check-terraform
       - check-terragrunt
     vars:
-      DEPLOYMENT: "" # Define the deployment
-      ENV: "" # Define the environment
-      REGION: "" # Define the region
-      MODULE: "" # Define the module
+      DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
+      ENV: '{{.ENV | default ""}}'
+      MODULE: '{{.MODULE | default ""}}'
+      REGION: '{{.REGION | default ""}}'
     cmds:
       - |
-        if [ -z "{{.DEPLOYMENT}}" ] && [ -z "{{.ENV}}" ] && [ -z "{{.REGION}}" ] && [ -z "{{.MODULE}}" ]; then
+        # Check for required environment variables
+        if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+          echo "Please provide all required variables: DEPLOYMENT, ENV, and REGION"
+          exit 1
+        fi
+
+        BASE_PATH="dread-infra/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        # If MODULE is specified, run for specific module
+        if [ ! -z "{{ .MODULE }}" ]; then
+          echo "Running destroy for module: {{ .MODULE }}"
+          terragrunt destroy \
+            -auto-approve \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "${BASE_PATH}/{{ .MODULE }}"
+        else
           echo "Running default destroy for all modules..."
           terragrunt run-all destroy \
-          -auto-approve \
-          --terragrunt-non-interactive \
-          -lock=false \
-          --terragrunt-working-dir dread-infra
-        else
-          if [ -z "{{.DEPLOYMENT}}" ] || [ -z "{{.ENV}}" ] || [ -z "{{.REGION}}" ] || [ -z "{{.MODULE}}" ]; then
-            echo "Please provide all required variables: DEPLOYMENT, ENV, REGION, and MODULE."
-            exit 1
-          fi
-          CONFIG_PATH="dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}/terragrunt.hcl"
-          if [ ! -f $CONFIG_PATH ]; then
-            echo "Terragrunt config not found at $CONFIG_PATH. Please check paths."
-            exit 1
-          fi
-          terragrunt destroy \
-          -auto-approve \
-          --terragrunt-non-interactive \
-          -lock=false \
-          --terragrunt-working-dir dread-infra/{{.DEPLOYMENT}}/{{.ENV}}/{{.REGION}}/{{.MODULE}}
+            -auto-approve \
+            --terragrunt-non-interactive \
+            -lock=false \
+            --terragrunt-working-dir "$BASE_PATH"
         fi
 
   run-terratest:
