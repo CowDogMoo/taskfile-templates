@@ -103,14 +103,20 @@ tasks:
         fi
         BASE_PATH="{{ .BASE_PATH }}"
         AUTO_APPROVE_FLAG=""
+        INIT_UPGRADE_FLAG=""
         if [ "{{ .AUTO_APPROVE }}" = "true" ] && [ "{{ .COMMAND }}" != "init" ]; then
           AUTO_APPROVE_FLAG="-auto-approve"
+        fi
+        # Add upgrade flag for init command
+        if [ "{{ .COMMAND }}" = "init" ]; then
+          INIT_UPGRADE_FLAG="-upgrade"
         fi
         # If MODULE is specified, run for specific module
         if [ ! -z "{{ .MODULE }}" ]; then
           echo "Running {{ .COMMAND }} for module: {{ .MODULE }}"
           terragrunt {{ .COMMAND }} \
             $AUTO_APPROVE_FLAG \
+            $INIT_UPGRADE_FLAG \
             --terragrunt-non-interactive \
             -lock=false \
             --terragrunt-working-dir "${BASE_PATH}/{{ .MODULE }}"
@@ -118,6 +124,7 @@ tasks:
           echo "Running default {{ .COMMAND }} for all modules..."
           terragrunt run-all {{ .COMMAND }} \
             $AUTO_APPROVE_FLAG \
+            $INIT_UPGRADE_FLAG \
             --terragrunt-non-interactive \
             -lock=false \
             --terragrunt-working-dir "$BASE_PATH"
