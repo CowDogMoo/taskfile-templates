@@ -231,3 +231,44 @@ tasks:
         gh release create "$NEXT_VERSION" --generate-notes
     requires:
       vars: ['NEXT_VERSION']
+
+  diff-changes:
+    desc: "Show git diff excluding specified patterns (comma-separated)"
+    cmds:
+      - |
+        # Disable pagination for empty diffs
+        export GIT_PAGER='less -F -X'
+
+        if [ -n "{{.EXCLUDES}}" ]; then
+          command="git diff {{.BASE_BRANCH}} --"
+
+          # Process each pattern and add it to the command
+          echo "{{.EXCLUDES}}" | tr ',' '\n' | while read -r pattern; do
+            # Trim whitespace from pattern
+            pattern=$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -n "$pattern" ]; then
+              command="$command \":(exclude)$pattern\""
+            fi
+          done
+
+          # Capture the output of the git diff command
+          output=$(eval "$command")
+
+          # Check if there's any output
+          if [ -z "$output" ]; then
+            echo "No changes found when excluding patterns: {{.EXCLUDES}}"
+          else
+            echo "$output"
+          fi
+        else
+          # Capture output for regular diff
+          output=$(git diff {{.BASE_BRANCH}})
+          if [ -z "$output" ]; then
+            echo "No changes found in diff with {{.BASE_BRANCH}}"
+          else
+            echo "$output"
+          fi
+        fi
+    requires:
+      vars: ['BASE_BRANCH']
+    silent: true
