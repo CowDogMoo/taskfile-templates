@@ -36,7 +36,7 @@ Initializes Terraform configurations using Terragrunt. Can be used for specific
 modules or all modules.
 
 ```bash
-task terragrunt-init DEPLOYMENT=crucible ENV=dev REGION=us-east-2
+task terragrunt-init DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
 ### terragrunt-apply
@@ -47,13 +47,13 @@ modules or all modules.
 **Apply all modules:**
 
 ```bash
-task terragrunt-apply DEPLOYMENT=crucible ENV=dev REGION=us-east-2 -y
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 ```
 
 **Apply specific module:**
 
 ```bash
-task --verbose terragrunt-apply DEPLOYMENT=crucible ENV=dev REGION=us-east-2 MODULE=cruciboard -y
+task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
 ```
 
 ### terragrunt-destroy
@@ -64,13 +64,13 @@ or all modules.
 **Destroy all modules:**
 
 ```bash
-task terragrunt-destroy DEPLOYMENT=crucible ENV=dev REGION=us-east-2 -y
+task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 ```
 
 **Destroy specific module:**
 
 ```bash
-task terragrunt-destroy DEPLOYMENT=crucible ENV=dev REGION=us-east-2 MODULE=cruciboard -y
+task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
 ```
 
 ### run-terratest
@@ -172,10 +172,10 @@ task run-terratest DESTROY=false VERBOSE=true LOG_TO_FILE=true LOG_PATH=/tmp/out
 
 ```bash
 # Apply all modules
-task terragrunt-apply DEPLOYMENT=crucible ENV=dev REGION=us-east-2 -y
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 
 # Apply specific module with verbose output
-task --verbose terragrunt-apply DEPLOYMENT=crucible ENV=dev REGION=us-east-2 MODULE=cruciboard -y
+task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
 ```
 
 4. **Format and validate Terraform code:**
@@ -210,7 +210,7 @@ tasks:
     cmds:
       - task: tf:terragrunt-apply
         vars:
-          DEPLOYMENT: crucible
+          DEPLOYMENT: myenv
           ENV: dev
           REGION: us-east-2
 ```
