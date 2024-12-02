@@ -200,6 +200,7 @@ tasks:
             go test -timeout={{.TIMEOUT}}
           fi
         fi
+    silent: true
 
   validate:
     desc: "Run Terraform validate to ensure configuration is syntactically correct"
