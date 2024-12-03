@@ -88,52 +88,65 @@ tasks:
     silent: true
     cmds:
       - |
-        # Set the submodule path variable
-        export SUBMODULE_PATH="{{.SUBMODULE_PATH}}"
+        # Set variables
+        submodule_path="{{.TARGET_DIR}}/{{.REGEXP}}"
 
-        # Validate that the submodule path is provided
-        if [ -z "$SUBMODULE_PATH" ]; then
-          echo "Submodule path is required. Set the SUBMODULE_PATH variable."
-          exit 1
+        # Find matching submodules
+        matching_submodules=$(git config --file .gitmodules --get-regexp path | grep "{{.REGEXP}}" | cut -d ' ' -f2 || true)
+
+        if [ -z "$matching_submodules" ]; then
+          echo "No matching submodules found for pattern: {{.REGEXP}}"
+          exit 0
         fi
 
-        # Deinitialize the specified submodule(s) from .gitmodules
-        git submodule deinit -f -- "$SUBMODULE_PATH"
+        echo "Found matching submodules:"
+        echo "$matching_submodules"
+        echo "Proceeding with removal..."
 
-        # Check if the deinit command was successful
-        if [ $? -ne 0 ]; then
-          echo "Failed to deinitialize submodule at $SUBMODULE_PATH."
-          exit 1
+        for submodule in $matching_submodules; do
+          echo "Removing submodule: $submodule"
+
+          # Stage 1: Deinitialize the submodule
+          echo "Deinitializing submodule..."
+          git submodule deinit -f "$submodule" || {
+            echo "Warning: Failed to deinitialize $submodule, continuing anyway..."
+          }
+
+          # Stage 2: Remove the submodule entry from .git/config
+          git config --remove-section "submodule.$submodule" 2>/dev/null || true
+
+          # Stage 3: Remove the submodule from the working tree and .git/modules
+          echo "Removing from git..."
+          git rm -f "$submodule" || {
+            echo "Warning: Failed to git rm $submodule, trying manual removal..."
+            rm -rf "$submodule"
+          }
+
+          # Stage 4: Clean up .git/modules
+          echo "Cleaning up .git/modules..."
+          rm -rf ".git/modules/$submodule"
+
+          # Stage 5: Remove from .gitmodules file
+          echo "Updating .gitmodules..."
+          if git config -f .gitmodules --get-regexp "submodule\.$submodule" > /dev/null 2>&1; then
+            git config -f .gitmodules --remove-section "submodule.$submodule"
+            git add .gitmodules
+          fi
+        done
+
+        # Final cleanup and commit
+        echo "Performing final cleanup..."
+        git submodule sync --recursive
+
+        # Check if there are changes to commit
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "Committing changes..."
+          git commit -m "refactor: Remove submodules matching pattern {{.REGEXP}}" || true
         fi
 
-        # Remove the submodule directory from the Git repository
-        if [ -d ".git/modules/$SUBMODULE_PATH" ]; then
-          rm -rf ".git/modules/$SUBMODULE_PATH"
-        fi
-
-        # Remove the submodule directory from the working tree
-        git rm -rf "$SUBMODULE_PATH"
-
-        # Check if the git rm command was successful
-        if [ $? -ne 0 ]; then
-          echo "Failed to remove submodule directory at $SUBMODULE_PATH from working tree."
-          exit 1
-        fi
-
-        # Clean up .gitmodules file if any submodule references remain
-        if git config -f .gitmodules --get-regexp "submodule\.$SUBMODULE_PATH" > /dev/null 2>&1; then
-          git config -f .gitmodules --remove-section "submodule.$SUBMODULE_PATH"
-        fi
-
-        # Sync the submodule paths in .gitmodules to reflect the changes
-        git submodule sync
-
-        # Check if there are any changes to commit
-        if git diff --cached --quiet; then
-          echo "No changes to commit. Submodule removal may not have made any modifications."
-        fi
+        echo "Submodule removal complete"
     requires:
-      vars: ['SUBMODULE_PATH']
+      vars: ['TARGET_DIR', 'REGEXP']
 
   merge-pull-requests:
     desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
