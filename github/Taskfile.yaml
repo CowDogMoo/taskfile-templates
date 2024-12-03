@@ -28,50 +28,28 @@ tasks:
           mkdir -p "{{.TARGET_DIR}}"
         fi
 
-        # Clean up any existing submodule directories that may cause conflicts
+        # Clean up any existing repositories that may cause conflicts
         if [ -n "{{.REGEXP}}" ]; then
-          for repo in $(ls | grep '{{.REGEXP}}'); do
-            if [ -d "$repo" ]; then
-              rm -rf "$repo"
+          for repo in $(ls "{{.TARGET_DIR}}" | grep '{{.REGEXP}}'); do
+            if [ -d "{{.TARGET_DIR}}/$repo" ]; then
+              rm -rf "{{.TARGET_DIR}}/$repo"
             fi
           done
         fi
 
-        # Fetch the repository URLs and add them as submodules
-        response=$(gh api graphql -F query='query { repositoryOwner(login:"{{.ORG}}") { repositories(first: 100) { nodes { name url } } } }')
-
-        # Debugging output to check the response
-        if [[ -n "$DEBUG" && "$DEBUG" == "true" ]]; then
-          echo "GraphQL response: $response"
-        fi
-
-        if [[ -z "$response" || "$response" == "null" ]]; then
-          echo "Error: No response from GitHub API. Please check the organization name and your GitHub authentication."
+        # Get the repository URL
+        repo_url=$(gh repo view "{{.ORG}}/{{.REGEXP}}" --json url -q .url)
+        if [ -n "$repo_url" ]; then
+          echo "Adding submodule from: $repo_url"
+          git submodule add "$repo_url" "{{.TARGET_DIR}}/{{.REGEXP}}"
+        else
+          echo "Error: Repository not found"
           exit 1
         fi
 
-        # Process each repository URL and add as submodules with deduped paths
-        echo "$response" | jq -r '.data.repositoryOwner.repositories.nodes[]? | select(.name | test("{{.REGEXP}}")) | .url' | while read -r repo_url; do
-          if [ -n "$repo_url" ]; then
-            repo_name=$(basename "$repo_url")
-            target_path="{{.TARGET_DIR}}"
-
-            # Check if the target path ends with the repo name
-            if [[ "${target_path##*/}" == "$repo_name" ]]; then
-              # Use the parent path instead
-              target_path="${target_path%/*}"
-            fi
-
-            # Ensure target path exists
-            mkdir -p "$target_path"
-
-            # Add the submodule
-            git submodule add "$repo_url" "$target_path/$repo_name"
-          fi
-        done
-
-        # Sync the submodule paths in .gitmodules
-        git submodule sync
+        # Update and sync submodules
+        git submodule update --init --recursive
+        git submodule sync --recursive
     requires:
       vars: ['ORG', 'REGEXP', 'TARGET_DIR']
 
