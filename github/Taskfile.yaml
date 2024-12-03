@@ -3,25 +3,12 @@ version: "3"
 
 tasks:
   add-git-submodules:
-    desc: "Add submodules from GitHub based on a naming pattern using gh cli"
-    deps:
-      - check-gh-cli
+    desc: "Add submodules from GitHub based on a naming pattern"
     silent: true
     cmds:
       - |
         # Automatically confirm remote Taskfile trust
         export TASK_CONFIRM="y"
-
-        # Ensure Node.js is installed (required for the gh-submodule-add extension)
-        if ! type -p node >/dev/null; then
-          echo "Node.js is not installed. Please install it to continue."
-          exit 1
-        fi
-
-        # Install the gh-submodule-add extension if not already installed
-        if ! gh extension list | grep -q 'gh-submodule-add'; then
-          gh extension install crguezl/gh-submodule-add
-        fi
 
         # Create the target directory if it doesn't exist
         if [ -n "{{.TARGET_DIR}}" ]; then
@@ -53,16 +40,6 @@ tasks:
     requires:
       vars: ['ORG', 'REGEXP', 'TARGET_DIR']
 
-  check-gh-cli:
-    desc: "Validate that the GitHub CLI (gh) is installed"
-    cmds:
-      - |
-        if ! command -v gh &> /dev/null; then
-          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
-          exit 1
-        fi
-    silent: true
-
   create-release:
     desc: "Create a release on GitHub"
     deps:
@@ -83,8 +60,6 @@ tasks:
 
   remove-git-submodules:
     desc: "Remove one or more submodules and clean up related files"
-    deps:
-      - check-gh-cli
     silent: true
     cmds:
       - |
@@ -147,6 +122,16 @@ tasks:
         echo "Submodule removal complete"
     requires:
       vars: ['TARGET_DIR', 'REGEXP']
+
+  check-gh-cli:
+    desc: "Validate that the GitHub CLI (gh) is installed"
+    cmds:
+      - |
+        if ! command -v gh &> /dev/null; then
+          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
+          exit 1
+        fi
+    silent: true
 
   merge-pull-requests:
     desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
