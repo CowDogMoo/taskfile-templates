@@ -34,38 +34,44 @@ tasks:
       - |
         echo "Finding KMS keys without Name tags..."
         KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text)
-        echo "Analyzing keys..."
+        if [ -z "$KEYS" ]; then
+            echo "No keys found in region {{.REGION}}"
+            exit 0
+        fi
+
         for KEY_ID in $KEYS; do
+            echo "Processing KEY_ID: $KEY_ID"
             # Get key metadata
             KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}})
 
             # Check if key is already pending deletion
             DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState')
+            echo "Key status: $DELETION_STATUS"
 
             # Get tags for the key
             TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null)
+
             HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
+            echo "Name tag check complete: $HAS_NAME_TAG"
 
             # Get key creation date
             CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate')
+            echo "Creation date: $CREATION_DATE"
 
-            # If key has no Name tag and isn't already pending deletion
             if [ -z "$HAS_NAME_TAG" ] && [ "$DELETION_STATUS" != "PendingDeletion" ]; then
                 echo "Processing key: $KEY_ID"
                 echo "Created on: $CREATION_DATE"
-
                 # Disable the key first
                 aws kms disable-key --key-id $KEY_ID --region {{.REGION}}
-
                 # Schedule the key for deletion
                 aws kms schedule-key-deletion \
                     --key-id $KEY_ID \
                     --pending-window-in-days {{.DAYS_TO_DELETION}} \
                     --region {{.REGION}}
-
                 echo "Scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
                 echo "----------------------------------------"
+            else
+                echo "Key $KEY_ID skipped (has Name tag or already pending deletion)"
             fi
         done
         echo "Cleanup complete! Keys will be deleted after the waiting period."
-    silent: true
