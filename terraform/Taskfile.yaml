@@ -77,103 +77,111 @@ tasks:
 
   _terragrunt-base:
     internal: true
+    deps:
+      - check-terraform
+      - check-terragrunt
     vars:
+      AUTO_APPROVE: '{{.AUTO_APPROVE | default "true"}}'
       BASE_PATH: '{{.BASE_PATH | default "./"}}'
+      COMMAND: '{{.COMMAND}}'
       DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
       ENV: '{{.ENV | default ""}}'
       MODULE: '{{.MODULE | default ""}}'
       REGION: '{{.REGION | default ""}}'
-      COMMAND: '{{.COMMAND}}'
-      AUTO_APPROVE: '{{.AUTO_APPROVE | default "true"}}'
-    deps:
-      - check-terraform
-      - check-terragrunt
     cmds:
       - |
         set -eo pipefail
+
         # Check for required COMMAND variable
         if [ -z "{{.COMMAND}}" ]; then
           echo "ERROR: COMMAND variable is not set"
           exit 1
         fi
-        # Check for required environment variables
+
+        # Validate required variables
         if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
-          echo "Please provide all required variables: DEPLOYMENT, ENV, and REGION"
+          echo "ERROR: DEPLOYMENT, ENV, and REGION variables are required"
           exit 1
         fi
+
+        # Construct base path
+        WORKING_DIR=$(pwd)
         BASE_PATH="{{ .BASE_PATH }}"
-        AUTO_APPROVE_FLAG=""
-        INIT_UPGRADE_FLAG=""
-        if [ "{{ .AUTO_APPROVE }}" = "true" ] && [ "{{ .COMMAND }}" != "init" ]; then
-          AUTO_APPROVE_FLAG="-auto-approve"
+        FULL_PATH="$WORKING_DIR/$BASE_PATH/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        if [ ! -d "$FULL_PATH" ]; then
+          echo "ERROR: Directory does not exist: $FULL_PATH"
+          exit 1
         fi
-        # Add upgrade flag for init command
-        if [ "{{ .COMMAND }}" = "init" ]; then
-          INIT_UPGRADE_FLAG="-upgrade"
+
+        echo "Using path: $FULL_PATH"
+
+        # Configure terragrunt flags
+        FLAGS="--terragrunt-non-interactive -lock=false"
+
+        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && [ "{{.COMMAND}}" != "init" ]; then
+          FLAGS="$FLAGS -auto-approve"
         fi
-        # If MODULE is specified, run for specific module
-        if [ ! -z "{{ .MODULE }}" ]; then
-          echo "Running {{ .COMMAND }} for module: {{ .MODULE }}"
-          terragrunt {{ .COMMAND }} \
-            $AUTO_APPROVE_FLAG \
-            $INIT_UPGRADE_FLAG \
-            --terragrunt-non-interactive \
-            -lock=false \
-            --terragrunt-working-dir "${BASE_PATH}/{{ .MODULE }}"
+
+        if [ "{{.COMMAND}}" = "init" ]; then
+          FLAGS="$FLAGS -upgrade"
+        fi
+
+        # Execute terragrunt command
+        if [ -n "{{ .MODULE }}" ]; then
+          echo "Running terragrunt {{.COMMAND}} for module: {{.MODULE}}"
+          terragrunt {{.COMMAND}} $FLAGS \
+            --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
         else
-          echo "Running default {{ .COMMAND }} for all modules..."
-          terragrunt run-all {{ .COMMAND }} \
-            $AUTO_APPROVE_FLAG \
-            $INIT_UPGRADE_FLAG \
-            --terragrunt-non-interactive \
-            -lock=false \
-            --terragrunt-working-dir "$BASE_PATH"
+          echo "Running terragrunt {{.COMMAND}} for all modules"
+          terragrunt run-all {{.COMMAND}} $FLAGS \
+            --terragrunt-working-dir "$FULL_PATH"
         fi
 
   terragrunt-init:
-    desc: "Initialize a specific module in a specific environment using Terragrunt"
+    desc: "Initialize a specific module in a given environment using Terragrunt"
     vars:
       COMMAND: init
     cmds:
       - task: _terragrunt-base
         vars:
-          BASE_PATH: '{{.BASE_PATH }}'
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
           COMMAND: '{{.COMMAND}}'
           DEPLOYMENT: '{{.DEPLOYMENT}}'
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
-          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
 
   terragrunt-apply:
-    desc: "Apply a specific module in a specific environment using Terragrunt"
+    desc: "Apply a specific module in a given environment using Terragrunt"
     vars:
       COMMAND: apply
     cmds:
       - task: _terragrunt-base
         vars:
-          BASE_PATH: '{{.BASE_PATH }}'
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
           COMMAND: '{{.COMMAND}}'
           DEPLOYMENT: '{{.DEPLOYMENT}}'
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
-          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
 
   terragrunt-destroy:
-    desc: "Destroy a specific module in a specific environment using Terragrunt"
+    desc: "Destroy a specific module in a given environment using Terragrunt"
     vars:
       COMMAND: destroy
     cmds:
       - task: _terragrunt-base
         vars:
-          BASE_PATH: '{{.BASE_PATH }}'
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
           COMMAND: '{{.COMMAND}}'
           DEPLOYMENT: '{{.DEPLOYMENT}}'
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
-          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
 
   run-terratest:
     desc: "Run Terratest for infrastructure testing"
