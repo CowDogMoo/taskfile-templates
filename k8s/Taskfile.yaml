@@ -1,0 +1,42 @@
+---
+version: "3"
+
+tasks:
+  destroy-stuck-ns:
+    desc: "Remove finalizers from stuck Kubernetes namespaces"
+    cmds:
+      - |
+        # Find all namespaces in Terminating state
+        TERMINATING_NS=$(kubectl get ns --field-selector status.phase=Terminating -o jsonpath='{.items[*].metadata.name}')
+
+        if [ -z "$TERMINATING_NS" ]; then
+            echo "No stuck namespaces found"
+            exit 0
+        fi
+
+        echo "Found stuck namespaces: $TERMINATING_NS"
+
+        # Process each namespace in parallel
+        for ns in $TERMINATING_NS; do
+            (
+                echo "Removing finalizers from namespace: $ns"
+                # Get the namespace definition
+                kubectl get namespace $ns -o json > tmp_$ns.json
+                # Remove finalizers
+                cat tmp_$ns.json | jq '.spec.finalizers = []' > tmp_clean_$ns.json
+                # Update the namespace using proxy to bypass kubectl
+                kubectl proxy &
+                PROXY_PID=$!
+                sleep 1
+                curl -k -H "Content-Type: application/json" -X PUT --data-binary @tmp_clean_$ns.json http://127.0.0.1:8001/api/v1/namespaces/$ns/finalize
+                kill $PROXY_PID
+                # Clean up temporary files
+                rm tmp_$ns.json tmp_clean_$ns.json
+                printf "Completed processing namespace: %s\n" "$ns"
+            ) &
+        done
+
+        # Wait for all background processes to complete
+        wait
+        echo "All stuck namespaces have been processed"
+    silent: false
