@@ -75,3 +75,53 @@ tasks:
             fi
         done
         echo "Cleanup complete! Keys will be deleted after the waiting period."
+
+  cleanup-efs:
+    desc: "Delete EFS file system and its mount targets"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default "us-east-2"}}'
+      FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
+    cmds:
+      - |
+        if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
+            echo "Error: FILE_SYSTEM_ID is required"
+            exit 1
+        fi
+
+        echo "Retrieving mount targets for file system: {{.FILE_SYSTEM_ID}}"
+        MOUNT_TARGET_IDS=$(aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets[].MountTargetId" --output text)
+
+        if [ -z "$MOUNT_TARGET_IDS" ]; then
+            echo "No mount targets found for file system: {{.FILE_SYSTEM_ID}}"
+        else
+            echo "Deleting mount targets..."
+            for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
+                echo "Deleting mount target: $MOUNT_TARGET_ID"
+                aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
+                if [ $? -eq 0 ]; then
+                    echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
+                else
+                    echo "Failed to delete mount target: $MOUNT_TARGET_ID"
+                    exit 1
+                fi
+            done
+        fi
+
+        echo "Waiting for all mount targets to be deleted..."
+        while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
+            sleep 5
+            echo "Still waiting for mount targets to be deleted..."
+        done
+        echo "All mount targets deleted."
+
+        echo "Deleting file system: {{.FILE_SYSTEM_ID}}"
+        aws efs delete-file-system --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}}
+
+        if [ $? -eq 0 ]; then
+            echo "File system {{.FILE_SYSTEM_ID}} successfully deleted."
+        else
+            echo "Failed to delete file system {{.FILE_SYSTEM_ID}}."
+            exit 1
+        fi
