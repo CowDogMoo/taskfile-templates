@@ -133,6 +133,19 @@ tasks:
         fi
     silent: true
 
+  update-submodules:
+    desc: "Update all submodules to their latest upstream versions using rebase"
+    silent: true
+    cmds:
+      - |
+        echo "Updating all submodules to latest upstream versions..."
+        if git submodule update --rebase --remote; then
+          echo "Successfully updated all submodules"
+        else
+          echo "Failed to update some submodules. Check error messages above."
+          exit 1
+        fi
+
   merge-pull-requests:
     desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
     deps:
