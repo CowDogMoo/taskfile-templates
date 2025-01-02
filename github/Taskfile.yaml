@@ -248,3 +248,21 @@ tasks:
     requires:
       vars: ['BASE_BRANCH']
     silent: true
+
+  pull-git-repos:
+    desc: "Pull updates for all git repositories in the current directory"
+    silent: true
+    cmds:
+      - |
+        find . -maxdepth 1 -type d ! -name ".git" -exec sh -c '
+          cd "{}" &&
+          echo "Processing: {}" &&
+          branch=$(git branch --show-current 2>/dev/null) &&
+          if [ -z "$branch" ]; then
+            echo "Failed in {}: Not on a branch. Skipping."
+          elif ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Failed in {}: Uncommitted or unstaged changes. Skipping."
+          else
+            git pull || echo "Failed in {}: Git pull failed."
+          fi
+        ' \;
