@@ -67,3 +67,10 @@ tasks:
         # Wait for all background processes to complete
         wait
         echo "All stuck namespaces have been processed"
+
+  list-node-pods:
+    desc: "List all pods running on a specific node across all namespaces"
+    vars:
+      NODE_NAME: '{{ .NODE_NAME | default "node1" }}'
+    cmds:
+      - kubectl get pods --all-namespaces --field-selector spec.nodeName={{ .NODE_NAME }} -o wide
