@@ -1,0 +1,92 @@
+---
+version: "3"
+
+vars:
+  # The UBIQUITI_CONTROLLER_HOST should be provided via environment variable
+  # or explicitly set when running the task
+  UBIQUITI_CONTROLLER_HOST:
+    sh: if [ -z "${UBIQUITI_CONTROLLER_HOST}" ]; then echo "Please set UBIQUITI_CONTROLLER_HOST"; exit 1; else echo "${UBIQUITI_CONTROLLER_HOST}"; fi
+  UBIQUITI_BASE_URL: "https://{{.UBIQUITI_CONTROLLER_HOST}}"
+
+tasks:
+  check-dependencies:
+    desc: "Validate that required tools are installed"
+    cmds:
+      - |
+        if ! command -v curl &> /dev/null; then
+          echo "'curl' command not found. Please install curl"
+          exit 1
+        fi
+        if ! command -v jq &> /dev/null; then
+          echo "'jq' command not found. Please install jq"
+          exit 1
+        fi
+        if ! command -v op &> /dev/null; then
+          echo "'op' command not found. Please install 1Password CLI"
+          exit 1
+        fi
+    silent: true
+
+  default:
+    desc: "List available Ubiquiti commands"
+    cmds:
+      - task --list
+
+  list-sites:
+    desc: "List all Ubiquiti sites"
+    deps:
+      - check-dependencies
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+        curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/integration/v1/sites" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY" | jq '.'
+
+  list-unifi-devices:
+    desc: "List adopted Unifi devices in the default site"
+    deps:
+      - check-dependencies
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+        SITE_ID=$(curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/integration/v1/sites" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY" | jq -r '.data[0].id')
+        curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/integration/v1/sites/${SITE_ID}/devices" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY" | jq '.'
+
+  list-clients:
+    desc: "List all clients in the default site. Optionally filter by network name"
+    deps:
+      - check-dependencies
+    vars:
+      NETWORK: '{{.NETWORK | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+        if [ -z "{{.NETWORK}}" ]; then
+          curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/stat/sta" \
+            -H "Accept: application/json" \
+            -H "X-API-KEY: $API_KEY" | jq '.'
+        else
+          curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/stat/sta" \
+            -H "Accept: application/json" \
+            -H "X-API-KEY: $API_KEY" | jq --arg network "{{.NETWORK}}" '.data[] | select(.network == $network)'
+        fi
+
+  list-fw-rules:
+    desc: "List firewall rules"
+    deps:
+      - check-dependencies
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+        curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/rest/firewallrule" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY" | jq '.'
