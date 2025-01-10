@@ -72,6 +72,39 @@ task list-clients
 task list-clients NETWORK=IoT
 ```
 
+### list-networks
+
+Lists all networks including VLANs. Supports optional redaction of sensitive information.
+
+**List all networks:**
+
+```bash
+task list-networks
+```
+
+**List networks with sensitive keys redacted:**
+
+```bash
+task list-networks REDACT=true
+```
+
+### list-wlans
+
+Lists all configured wireless networks (WLANs). Supports optional redaction of
+sensitive information.
+
+**List all WLANs:**
+
+```bash
+task list-wlans
+```
+
+**List WLANs with sensitive information redacted:**
+
+```bash
+task list-wlans REDACT=true
+```
+
 ### list-fw-rules
 
 Lists all firewall rules configured in the default site.
@@ -93,6 +126,18 @@ task list-fw-rules
 
    ```bash
    task list-clients NETWORK=Guest
+   ```
+
+1. **View networks with sensitive information hidden:**
+
+   ```bash
+   task list-networks REDACT=true
+   ```
+
+1. **Check wireless configurations securely:**
+
+   ```bash
+   task list-wlans REDACT=true
    ```
 
 1. **Check firewall rules:**
@@ -138,3 +183,5 @@ tasks:
   (common in Unifi setups)
 - Proper error handling is implemented with `set -euo pipefail`
 - JSON responses are automatically formatted using jq for better readability
+- The REDACT option for network and WLAN tasks masks sensitive values like
+  private keys and passphrases while preserving other configuration details

@@ -90,3 +90,70 @@ tasks:
         curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/rest/firewallrule" \
           -H "Accept: application/json" \
           -H "X-API-KEY: $API_KEY" | jq '.'
+
+  list-networks:
+    desc: "List all networks including VLANs. Use REDACT=true to mask sensitive keys and passwords"
+    deps:
+      - check-dependencies
+    vars:
+      REDACT: '{{.REDACT | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+
+        # Build JQ filter based on redaction setting
+        if [ "{{.REDACT}}" = "true" ]; then
+          FILTER='with_entries(
+            if .key | test("(x_.*key|x_.*secret|pre_shared_key)"; "i") then
+              .value = "REDACTED"
+            else
+              .
+            end
+          )'
+        else
+          FILTER='.'
+        fi
+
+        # First try the networks endpoint if available
+        RESPONSE=$(curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/rest/networkconf" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY")
+
+        # Check if we got a valid response
+        if [ "$(echo "$RESPONSE" | jq -r '.meta.rc')" = "ok" ]; then
+          echo "$RESPONSE" | jq ".data[] | $FILTER"
+        else
+          # Fallback to settings endpoint
+          curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/rest/setting" \
+            -H "Accept: application/json" \
+            -H "X-API-KEY: $API_KEY" | jq ".data | map(select(.key == \"networks\")) | .[].value[] | $FILTER"
+        fi
+
+  list-wlans:
+    desc: "List all configured wireless networks (WLANs). Use REDACT=true to mask sensitive keys and passwords"
+    deps:
+      - check-dependencies
+    vars:
+      REDACT: '{{.REDACT | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+
+        # Build JQ filter based on redaction setting
+        if [ "{{.REDACT}}" = "true" ]; then
+          FILTER='with_entries(
+            if .key | IN("private_preshared_keys", "x_passphrase", "x_iapp_key", "site_id") then
+              .value = "REDACTED"
+            else
+              .
+            end
+          )'
+        else
+          FILTER='.'
+        fi
+
+        curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/rest/wlanconf" \
+          -H "Accept: application/json" \
+          -H "X-API-KEY: $API_KEY" | jq ".data[] | $FILTER"
