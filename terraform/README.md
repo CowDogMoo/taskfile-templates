@@ -39,6 +39,23 @@ modules or all modules.
 task terragrunt-init DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
+### terragrunt-plan
+
+Shows the execution plan for Terraform configurations using Terragrunt. Can be
+used for specific modules or all modules.
+
+**Plan all modules:**
+
+```bash
+task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+```
+
+**Plan specific module:**
+
+```bash
+task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
+```
+
 ### terragrunt-apply
 
 Applies Terraform configurations using Terragrunt. Can be used for specific
@@ -53,7 +70,7 @@ task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 **Apply specific module:**
 
 ```bash
-task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
+task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
 ```
 
 ### terragrunt-destroy
@@ -70,7 +87,7 @@ task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 **Destroy specific module:**
 
 ```bash
-task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
+task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
 ```
 
 ### run-terratest
@@ -158,32 +175,35 @@ task release NEXT_VERSION=1.0.0
 
 1. **Running Terratest without destroying infrastructure:**
 
-```bash
-task run-terratest DESTROY=false
-```
+   ```bash
+   task run-terratest DESTROY=false
+   ```
 
-2. **Running Terratest with verbose output and logging to disk:**
+1. **Running Terratest with verbose output and logging to disk:**
 
-```bash
-task run-terratest DESTROY=false VERBOSE=true LOG_TO_FILE=true LOG_PATH=/tmp/output.log
-```
+   ```bash
+   task run-terratest DESTROY=false VERBOSE=true LOG_TO_FILE=true LOG_PATH=/tmp/output.log
+   ```
 
-3. **Applying infrastructure changes:**
+1. **Applying infrastructure changes:**
 
-```bash
-# Apply all modules
-task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
+   ```bash
+   # Plan changes for all modules
+   task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 
-# Apply specific module with verbose output
-task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=cruciboard -y
-```
+   # Apply all modules
+   task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 
-4. **Format and validate Terraform code:**
+   # Apply specific module with verbose output
+   task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
+   ```
 
-```bash
-task format
-task validate
-```
+1. **Format and validate Terraform code:**
+
+   ```bash
+   task format
+   task validate
+   ```
 
 ## 🔧 Extending Tasks
 

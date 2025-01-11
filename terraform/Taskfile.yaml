@@ -119,7 +119,8 @@ tasks:
         # Configure terragrunt flags
         FLAGS="--terragrunt-non-interactive -lock=false"
 
-        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && [ "{{.COMMAND}}" != "init" ]; then
+        # Only add -auto-approve for apply and destroy commands
+        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && [ "{{.COMMAND}}" != "init" ] && [ "{{.COMMAND}}" != "plan" ]; then
           FLAGS="$FLAGS -auto-approve"
         fi
 
@@ -133,7 +134,7 @@ tasks:
           terragrunt {{.COMMAND}} $FLAGS \
             --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
         else
-          echo "Running terragrunt {{.COMMAND}} for all modules"
+          echo "Running terragrunt run-all {{.COMMAND}} for all modules"
           terragrunt run-all {{.COMMAND}} $FLAGS \
             --terragrunt-working-dir "$FULL_PATH"
         fi
@@ -142,6 +143,21 @@ tasks:
     desc: "Initialize a specific module in a given environment using Terragrunt"
     vars:
       COMMAND: init
+    cmds:
+      - task: _terragrunt-base
+        vars:
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
+          COMMAND: '{{.COMMAND}}'
+          DEPLOYMENT: '{{.DEPLOYMENT}}'
+          ENV: '{{.ENV}}'
+          REGION: '{{.REGION}}'
+          MODULE: '{{.MODULE}}'
+
+  terragrunt-plan:
+    desc: "Plan changes to a specific module in a given environment using Terragrunt"
+    vars:
+      COMMAND: plan
     cmds:
       - task: _terragrunt-base
         vars:
