@@ -120,7 +120,7 @@ tasks:
         FLAGS="--terragrunt-non-interactive -lock=false"
 
         # Only add -auto-approve for apply and destroy commands
-        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && [ "{{.COMMAND}}" != "init" ] && [ "{{.COMMAND}}" != "plan" ]; then
+        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && ( [ "{{.COMMAND}}" = "apply" ] || [ "{{.COMMAND}}" = "destroy" ] ); then
           FLAGS="$FLAGS -auto-approve"
         fi
 
@@ -131,8 +131,13 @@ tasks:
         # Execute terragrunt command
         if [ -n "{{ .MODULE }}" ]; then
           echo "Running terragrunt {{.COMMAND}} for module: {{.MODULE}}"
-          terragrunt {{.COMMAND}} $FLAGS \
-            --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
+          if [ "{{.COMMAND}}" = "destroy" ]; then
+            terragrunt run-all {{.COMMAND}} $FLAGS \
+              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
+          else
+            terragrunt {{.COMMAND}} $FLAGS \
+              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
+          fi
         else
           echo "Running terragrunt run-all {{.COMMAND}} for all modules"
           terragrunt run-all {{.COMMAND}} $FLAGS \
