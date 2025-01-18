@@ -90,6 +90,26 @@ task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
 task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
 ```
 
+### terragrunt-state-remove-all
+
+Removes all resources from the Terraform state using Terragrunt.
+Can target specific modules or all modules.
+
+**Remove state for all modules:**
+
+```bash
+task terragrunt-state-remove-all \
+  DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+```
+
+**Remove state for specific module:**
+
+```bash
+task terragrunt-state-remove-all \
+  DEPLOYMENT=myenv ENV=dev REGION=us-east-2 \
+  MODULE=mymodule
+```
+
 ### run-terratest
 
 Runs Terratest infrastructure tests. The `run-terratest` task supports the

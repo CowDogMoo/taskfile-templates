@@ -253,3 +253,49 @@ tasks:
     cmds:
       - |
         terraform fmt -recursive
+
+  terragrunt-state-remove-all:
+      desc: "Remove all resources from the Terraform state for a specific module"
+      deps:
+        - check-terraform
+        - check-terragrunt
+      vars:
+        BASE_PATH: '{{.BASE_PATH | default "./"}}'
+        DEPLOYMENT: '{{.DEPLOYMENT}}'
+        ENV: '{{.ENV}}'
+        MODULE: '{{.MODULE}}'
+        REGION: '{{.REGION}}'
+      cmds:
+        - |
+          set -eo pipefail
+
+          # Validate required variables
+          if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+            echo "ERROR: DEPLOYMENT, ENV, and REGION variables are required"
+            exit 1
+          fi
+
+          # Construct base path
+          WORKING_DIR=$(pwd)
+          BASE_PATH="{{ .BASE_PATH }}"
+          FULL_PATH="$WORKING_DIR/$BASE_PATH/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+          if [ ! -d "$FULL_PATH" ]; then
+            echo "ERROR: Directory does not exist: $FULL_PATH"
+            exit 1
+          fi
+
+          echo "Using path: $FULL_PATH"
+
+          if [ -n "{{ .MODULE }}" ]; then
+            echo "Removing all state resources for module: {{.MODULE}}"
+            cd "$FULL_PATH/{{.MODULE}}"
+          else
+            echo "Removing all state resources from root module"
+            cd "$FULL_PATH"
+          fi
+
+          # List all resources and remove them one by one
+          terragrunt state list | sed 's/"/\\"/g' | xargs -I {} terragrunt state rm "{}"
+
+      silent: true
