@@ -10,12 +10,10 @@ tasks:
       - |
         # Find all namespaces in Terminating state
         TERMINATING_NS=$(kubectl get ns --field-selector status.phase=Terminating -o jsonpath='{.items[*].metadata.name}')
-
         if [ -z "$TERMINATING_NS" ]; then
             echo "No stuck namespaces found"
             exit 0
         fi
-
         echo "Found stuck namespaces: $TERMINATING_NS"
 
         cleanup_proxy() {
@@ -23,49 +21,59 @@ tasks:
             local proxy_port=$2
             if [ ! -z "$proxy_pid" ]; then
                 # Kill the proxy and any child processes
-                pkill -P $proxy_pid
+                pkill -P $proxy_pid 2>/dev/null || true
                 kill -9 $proxy_pid 2>/dev/null || true
                 # Additional cleanup to ensure no hanging processes
-                lsof -ti:$proxy_port | xargs -r kill -9
+                lsof -ti :$proxy_port | xargs -r kill -9 2>/dev/null || true
             fi
         }
 
-        # Process each namespace in parallel
+        # Kill any existing proxy on the port
+        lsof -ti :{{ .PROXY_PORT }} | xargs -r kill -9 2>/dev/null || true
+
+        # Process each namespace sequentially to avoid port conflicts
         for ns in $TERMINATING_NS; do
-            (
-                echo "Removing finalizers from namespace: $ns"
-                # Get the namespace definition
-                kubectl get namespace $ns -o json > tmp_$ns.json
-                # Remove finalizers
-                cat tmp_$ns.json | jq '.spec.finalizers = []' > tmp_clean_$ns.json
+            echo "Removing finalizers from namespace: $ns"
 
-                # Start proxy with proper cleanup
-                kubectl proxy --port={{ .PROXY_PORT }} &
-                PROXY_PID=$!
+            # Get the namespace definition
+            kubectl get namespace $ns -o json > "tmp_$ns.json"
 
-                # Ensure proxy cleanup happens on script exit
-                trap "cleanup_proxy $PROXY_PID {{ .PROXY_PORT }}" EXIT
+            # Remove finalizers
+            cat "tmp_$ns.json" | jq '.spec.finalizers = []' > "tmp_clean_$ns.json"
 
-                sleep 1
+            # Start proxy with proper cleanup
+            kubectl proxy --port={{ .PROXY_PORT }} &
+            PROXY_PID=$!
 
-                if ! curl -k -H "Content-Type: application/json" -X PUT --data-binary @tmp_clean_$ns.json http://127.0.0.1:{{ .PROXY_PORT }}/api/v1/namespaces/$ns/finalize; then
-                    echo "Failed to update namespace: $ns"
+            # Wait for proxy to be ready
+            for i in $(seq 1 10); do
+                if curl -s http://127.0.0.1:{{ .PROXY_PORT }} >/dev/null; then
+                    break
+                fi
+                if [ $i -eq 10 ]; then
+                    echo "Proxy failed to start for namespace: $ns"
                     cleanup_proxy $PROXY_PID {{ .PROXY_PORT }}
                     exit 1
                 fi
+                sleep 1
+            done
 
-                # Clean up temporary files
-                rm -f tmp_$ns.json tmp_clean_$ns.json
-
-                # Cleanup proxy explicitly after successful completion
+            # Update the namespace
+            if ! curl -k -H "Content-Type: application/json" -X PUT --data-binary @"tmp_clean_$ns.json" \
+                http://127.0.0.1:{{ .PROXY_PORT }}/api/v1/namespaces/$ns/finalize; then
+                echo "Failed to update namespace: $ns"
                 cleanup_proxy $PROXY_PID {{ .PROXY_PORT }}
+                rm -f "tmp_$ns.json" "tmp_clean_$ns.json"
+                exit 1
+            fi
 
-                printf "Completed processing namespace: %s\n" "$ns"
-            ) &
+            # Clean up proxy and temporary files
+            cleanup_proxy $PROXY_PID {{ .PROXY_PORT }}
+            rm -f "tmp_$ns.json" "tmp_clean_$ns.json"
+
+            printf "Completed processing namespace: %s\n" "$ns"
         done
 
-        # Wait for all background processes to complete
-        wait
         echo "All stuck namespaces have been processed"
 
   list-node-pods:
