@@ -12,6 +12,14 @@ including namespace cleanup, pod management, and cluster maintenance tasks.
 
 ## 🎯 Available Tasks
 
+### create-kind
+
+Creates a kind cluster with one control plane and one worker node.
+
+```bash
+task create-kind
+```
+
 ### destroy-stuck-ns
 
 Removes finalizers from Kubernetes namespaces stuck in Terminating state. The
@@ -48,13 +56,22 @@ task list-node-pods NODE_NAME=k8s6
 
 ## 📝 Example Usage
 
-1. **Clean up stuck namespaces:**
+**Create a kind cluster:**
+
+```bash
+task create-kind
+
+# Switch to the new cluster
+kubectl cluster-info --context kind-test-cluster
+```
+
+**Clean up stuck namespaces:**
 
 ```bash
 task destroy-stuck-ns
 ```
 
-2. **List pods on a specific node:**
+**List pods on a specific node:**
 
 ```bash
 task list-node-pods NODE_NAME=worker-1

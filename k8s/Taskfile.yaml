@@ -2,6 +2,20 @@
 version: "3"
 
 tasks:
+  create-kind:
+    desc: "Create a kind cluster with one control plane and one worker node"
+    cmds:
+    - |
+        cat > kind-config.yaml <<EOF
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+        - role: worker
+        EOF
+        kind create cluster --name test-cluster --config kind-config.yaml
+        rm kind-config.yaml
+
   destroy-stuck-ns:
     desc: "Remove finalizers from stuck Kubernetes namespaces"
     vars:
