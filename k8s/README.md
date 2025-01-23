@@ -10,38 +10,43 @@ including namespace cleanup, pod management, and cluster maintenance tasks.
 - [jq](https://stedolan.github.io/jq/download/) installed (for JSON processing)
 - [Task](https://taskfile.dev) installed (`brew install go-task/tap/go-task`)
 - [Helm](https://helm.sh/docs/intro/install/) installed (for package management)
-- [Flux](https://fluxcd.io/flux/installation/) (optional, for GitOps workflow)
-- [ArgoCD](https://argo-cd.readthedocs.io/en/stable/getting_started/)
-  (optional, for GitOps workflow)
-
----
+- [Python3](https://www.python.org/downloads/) with `bcrypt` package (for
+  password hashing)
 
 ## 🎯 Available Tasks
 
 ### create-kind
 
-Creates a kind cluster with one control plane and one worker node.
+Creates a kind cluster with one control plane and one worker node using a
+temporary configuration file.
 
 ```bash
+# Create a new test cluster
 task create-kind
+
+# The cluster will be named 'test-cluster' and include:
+# - One control-plane node
+# - One worker node
 ```
 
 ### destroy-stuck-ns
 
 Removes finalizers from Kubernetes namespaces stuck in the `Terminating` state.
-The task runs in parallel for multiple namespaces and includes proper cleanup
-of temporary resources.
+Handles proxy management and cleanup automatically.
 
 **Variables:**
 
-- `PROXY_PORT`: Port for kubectl proxy (default: 8001)
+- `PROXY_PORT`: Port to use for kubectl proxy (default: 8001)
 
 ```bash
-# Run with default proxy port
+# Remove finalizers using default proxy port
 task destroy-stuck-ns
 
-# Run with custom proxy port
+# Use custom proxy port
 task destroy-stuck-ns PROXY_PORT=8002
+
+# Run with verbose output to debug issues
+task destroy-stuck-ns --verbose
 ```
 
 ### list-node-pods
@@ -60,194 +65,160 @@ task list-node-pods
 task list-node-pods NODE_NAME=k8s6
 ```
 
-### setup-helm-in-kind
+### setup-helm
 
-Installs Helm and deploys a test chart (e.g., Nginx) in the kind cluster.
+Generic Helm chart installation task that handles repository setup and chart deployment.
+
+**Variables:**
+
+- `HELM_RELEASE`: Name of the Helm release (required)
+- `HELM_CHART`: Chart to install (required)
+- `HELM_NAMESPACE`: Target namespace (default: default)
+- `HELM_VERSION`: Specific chart version to install (optional)
+- `HELM_VALUES`: Path to values file (optional)
+- `HELM_REPO_NAME`: Name for the Helm repository (required)
+- `HELM_REPO_URL`: URL of the Helm repository (required)
 
 ```bash
-task setup-helm-in-kind
+# Install nginx from Bitnami repo
+task setup-helm \
+  HELM_RELEASE=my-nginx \
+  HELM_CHART=bitnami/nginx \
+  HELM_NAMESPACE=web \
+  HELM_REPO_NAME=bitnami \
+  HELM_REPO_URL=https://charts.bitnami.com/bitnami
+
+# Install specific version with custom values
+task setup-helm \
+  HELM_RELEASE=my-app \
+  HELM_CHART=stable/app \
+  HELM_VERSION=1.2.3 \
+  HELM_VALUES=my-values.yaml \
+  HELM_REPO_NAME=stable \
+  HELM_REPO_URL=https://charts.helm.sh/stable
 ```
 
-### setup-flux-in-kind
+### setup-argocd
 
-Bootstraps Flux in the kind cluster for GitOps-based deployments.
+Installs ArgoCD using Helm with secure password management and health checks.
 
-```bash
-task setup-flux-in-kind
-```
+**Variables:**
 
-### setup-argocd-in-kind
-
-Installs ArgoCD in the kind cluster and exposes the UI.
+- `ARGOCD_NAMESPACE`: Target namespace (default: argocd)
+- `ARGOCD_VERSION`: Version of ArgoCD to install (default: 5.51.6)
+- `ARGOCD_PASSWORD`: Admin password (default: admin)
 
 ```bash
-task setup-argocd-in-kind
-```
+# Install with default settings
+task setup-argocd
 
----
+# Custom installation with specific version and namespace
+task setup-argocd \
+  ARGOCD_NAMESPACE=gitops \
+  ARGOCD_VERSION=5.51.6 \
+  ARGOCD_PASSWORD=superSecret123
 
-## 📝 Example Usage
-
-### **Create a kind cluster**
-
-```bash
-task create-kind
-
-# Switch to the new cluster
-kubectl cluster-info --context kind-test-cluster
-```
-
----
-
-### **📦 Using Helm with kind**
-
-Once the kind cluster is up, you can install Helm and deploy a chart:
-
-```bash
-task setup-helm-in-kind
-
-# Verify Helm installation
-helm version
-
-# Install an example Nginx chart
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install my-nginx bitnami/nginx
-
-# Check the status of the deployment
-kubectl get pods -n default
-```
-
-**Uninstalling the Helm chart:**
-
-```bash
-helm uninstall my-nginx
-```
-
----
-
-### **🚀 Using Flux with kind**
-
-To set up Flux in the kind cluster for GitOps workflows:
-
-```bash
-task setup-flux-in-kind
-
-# Check Flux components
-kubectl get pods -n flux-system
-```
-
-**If using a GitHub repository for GitOps:**
-
-```bash
-flux bootstrap github \
-  --owner=my-github-user \
-  --repository=my-flux-repo \
-  --branch=main \
-  --path=clusters/kind-cluster
-```
-
-**If using a local source for Helm releases:**
-
-```bash
-flux create source helm podinfo \
-  --url=https://stefanprodan.github.io/podinfo
-
-flux create helmrelease podinfo \
-  --source=HelmRepository/podinfo \
-  --chart=podinfo \
-  --namespace=default
-```
-
----
-
-### **🚢 Using ArgoCD with kind**
-
-To install ArgoCD in the kind cluster:
-
-```bash
-task setup-argocd-in-kind
-
-# Check ArgoCD components
-kubectl get pods -n argocd
-```
-
-**Retrieve the ArgoCD admin password:**
-
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-```
-
-**Expose the ArgoCD UI:**
-
-```bash
+# After installation, access UI with:
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
 
-Now, open a browser and go to **https://localhost:8080**, then log in with:
+### setup-flux
 
-- **Username:** `admin`
-- **Password:** (output from the previous command)
+Installs Flux using Helm with automatic controller health verification.
 
-**Deploy an application with ArgoCD:**
+**Variables:**
 
-```bash
-argocd app create my-app \
-  --repo https://github.com/my-org/my-repo.git \
-  --path my-app \
-  --dest-server https://kubernetes.default.svc \
-  --dest-namespace default
-```
-
-**Sync the application:**
+- `FLUX_NAMESPACE`: Target namespace (default: flux-system)
+- `FLUX_VERSION`: Version of Flux to install (default: 2.14.1)
+- `FLUX_VALUES`: Path to custom values file (optional)
 
 ```bash
-argocd app sync my-app
+# Install with default settings
+task setup-flux
+
+# Custom installation
+task setup-flux \
+  FLUX_NAMESPACE=gitops \
+  FLUX_VERSION=2.14.1 \
+  FLUX_VALUES=./flux-values.yaml
 ```
 
----
+### uninstall-argocd
 
-## 🔧 Extending Tasks
+Cleanly removes ArgoCD installation and namespace.
 
-You can extend these tasks in your own Taskfile by importing this template and
-overriding or adding new tasks. Here's an example:
+**Variables:**
 
-```yaml
-version: "3"
+- `ARGOCD_NAMESPACE`: Namespace to remove (default: argocd)
 
-includes:
-  k8s:
-    taskfile: ./kubernetes.yml
-    optional: true
+```bash
+# Remove default installation
+task uninstall-argocd
 
-tasks:
-  # Override or extend existing tasks
-  list-node-pods:
-    deps: [k8s:list-node-pods]
-    cmds:
-      - echo "Additional pod filtering steps..."
-
-  # Add new tasks that use the base tasks
-  cleanup-node:
-    cmds:
-      - task: k8s:list-node-pods
-        vars:
-          NODE_NAME: worker-1
-      - echo "Performing additional cleanup..."
+# Remove from custom namespace
+task uninstall-argocd ARGOCD_NAMESPACE=gitops
 ```
 
----
+### uninstall-flux
+
+Cleanly removes Flux installation and namespace.
+
+**Variables:**
+
+- `FLUX_NAMESPACE`: Namespace to remove (default: flux-system)
+
+```bash
+# Remove default installation
+task uninstall-flux
+
+# Remove from custom namespace
+task uninstall-flux FLUX_NAMESPACE=gitops
+```
 
 ## 🔍 Important Notes
 
-- The `destroy-stuck-ns` task requires:
-  - `jq` for JSON processing
-  - Proper permissions to modify namespace finalizers
-  - An available port for kubectl proxy
-- `setup-helm-in-kind` assumes Helm is installed on your system
-- `setup-flux-in-kind` assumes Flux CLI is installed and authenticated for
-  GitOps operations
-- `setup-argocd-in-kind` assumes ArgoCD CLI is installed for application
-  management
-- Use `--verbose` for detailed task execution output
-- All tasks assume proper `kubectl` configuration and cluster access
-- Tasks can be combined or chained for more complex operations
+- All tasks include proper error handling and cleanup
+- ArgoCD installation includes:
+  - Secure password hashing using bcrypt
+  - LoadBalancer service type
+  - Insecure mode enabled for testing
+  - Kustomize plugins support
+  - Automatic readiness checks
+- Flux installation includes:
+  - Custom values support
+  - Automatic controller health verification
+  - Multi-tenant capabilities
+
+## 🔧 Extending Tasks
+
+Import these tasks in your own Taskfile:
+
+```yaml
+---
+version: "3"
+includes:
+  k8s: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/k8s/Taskfile.yaml"
+
+tasks:
+  deploy-argo-dev-stack:
+    cmds:
+      # Create local cluster
+      - task: k8s:create-kind
+
+      # Setup GitOps tools
+      - task: k8s:setup-argocd
+        vars:
+          ARGOCD_NAMESPACE: argocd
+          ARGOCD_PASSWORD: "{{.CLUSTER_PASSWORD}}"
+
+  deploy-flux-dev-stack:
+    cmds:
+      # Create local cluster
+      - task: k8s:create-kind
+
+      # Setup GitOps tools
+      - task: k8s:setup-flux
+        vars:
+          FLUX_NAMESPACE: flux-system
+          FLUX_VALUES: ./config/flux-values.yaml
+```
