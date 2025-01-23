@@ -4,6 +4,8 @@ version: "3"
 tasks:
   create-kind:
     desc: "Create a kind cluster with one control plane and one worker node"
+    vars:
+      CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
     cmds:
     - |
         cat > kind-config.yaml <<EOF
@@ -13,8 +15,28 @@ tasks:
         - role: control-plane
         - role: worker
         EOF
-        kind create cluster --name test-cluster --config kind-config.yaml
+        kind create cluster --name {{ .CLUSTER_NAME }} --config kind-config.yaml
         rm kind-config.yaml
+
+  destroy-kind:
+    desc: "Delete the kind cluster and cleanup related resources"
+    vars:
+      CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
+    cmds:
+      - |
+        # Check if the cluster exists
+        if kind get clusters | grep -q "^{{ .CLUSTER_NAME }}$"; then
+          echo "Deleting kind cluster: {{ .CLUSTER_NAME }}"
+          kind delete cluster --name {{ .CLUSTER_NAME }}
+        else
+          echo "No cluster named '{{ .CLUSTER_NAME }}' found"
+          exit 0
+        fi
+
+        # Additional cleanup for Docker resources (optional but thorough)
+        echo "Cleaning up any remaining Docker resources..."
+        docker container prune -f
+        docker network prune -f
 
   destroy-stuck-ns:
     desc: "Remove finalizers from stuck Kubernetes namespaces"

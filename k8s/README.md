@@ -20,13 +20,41 @@ including namespace cleanup, pod management, and cluster maintenance tasks.
 Creates a kind cluster with one control plane and one worker node using a
 temporary configuration file.
 
+**Variables:**
+
+- `CLUSTER_NAME`: Name for the cluster (default: test-cluster)
+
 ```bash
-# Create a new test cluster
+# Create a new cluster with default name
 task create-kind
 
-# The cluster will be named 'test-cluster' and include:
+# Create a cluster with custom name
+task create-kind CLUSTER_NAME=my-dev-cluster
+
+# The cluster will include:
 # - One control-plane node
 # - One worker node
+```
+
+### destroy-kind
+
+Deletes a kind cluster and cleans up associated Docker resources.
+
+**Variables:**
+
+- `CLUSTER_NAME`: Name of the cluster to delete (default: test-cluster)
+
+```bash
+# Delete the default test cluster
+task destroy-kind
+
+# Delete a specific cluster
+task destroy-kind CLUSTER_NAME=my-custom-cluster
+
+# The task will:
+# - Check if the cluster exists before attempting deletion
+# - Remove the kind cluster
+# - Clean up related Docker resources
 ```
 
 ### destroy-stuck-ns
