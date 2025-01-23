@@ -18,18 +18,22 @@ including namespace cleanup, pod management, and cluster maintenance tasks.
 ### create-kind
 
 Creates a kind cluster with one control plane and one worker node using a
-temporary configuration file.
+configuration file.
 
 **Variables:**
 
 - `CLUSTER_NAME`: Name for the cluster (default: test-cluster)
+- `CONFIG_PATH`: Path to the kind config file (default: /tmp/kind-config-${CLUSTER_NAME}.yaml)
 
 ```bash
-# Create a new cluster with default name
+# Create a new cluster with default settings
 task create-kind
 
 # Create a cluster with custom name
 task create-kind CLUSTER_NAME=my-dev-cluster
+
+# Create a cluster with persistent config file
+task create-kind CONFIG_PATH=./my-kind-config.yaml
 
 # The cluster will include:
 # - One control-plane node
@@ -43,6 +47,7 @@ Deletes a kind cluster and cleans up associated Docker resources.
 **Variables:**
 
 - `CLUSTER_NAME`: Name of the cluster to delete (default: test-cluster)
+- `CONFIG_PATH`: Path to the kind config file (default: /tmp/kind-config-${CLUSTER_NAME}.yaml)
 
 ```bash
 # Delete the default test cluster
@@ -51,9 +56,13 @@ task destroy-kind
 # Delete a specific cluster
 task destroy-kind CLUSTER_NAME=my-custom-cluster
 
+# Delete cluster and keep config file
+task destroy-kind CONFIG_PATH=./my-kind-config.yaml
+
 # The task will:
 # - Check if the cluster exists before attempting deletion
 # - Remove the kind cluster
+# - Clean up the config file (if using default location)
 # - Clean up related Docker resources
 ```
 

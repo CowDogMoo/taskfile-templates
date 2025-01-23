@@ -6,34 +6,51 @@ tasks:
     desc: "Create a kind cluster with one control plane and one worker node"
     vars:
       CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
+      CONFIG_PATH: '{{ .CONFIG_PATH | default "/tmp/kind-config-${CLUSTER_NAME}.yaml" }}'
     cmds:
     - |
-        cat > kind-config.yaml <<EOF
+        # Create config directory if it doesn't exist
+        mkdir -p "$(dirname {{ .CONFIG_PATH }})"
+
+        # Generate kind configuration
+        cat > {{ .CONFIG_PATH }} <<EOF
         kind: Cluster
         apiVersion: kind.x-k8s.io/v1alpha4
         nodes:
         - role: control-plane
         - role: worker
         EOF
-        kind create cluster --name {{ .CLUSTER_NAME }} --config kind-config.yaml
-        rm kind-config.yaml
+
+        # Create cluster
+        kind create cluster --name {{ .CLUSTER_NAME }} --config {{ .CONFIG_PATH }}
+
+        # Cleanup config file if using default temp location
+        if [[ "{{ .CONFIG_PATH }}" == "/tmp/kind-config-${CLUSTER_NAME}.yaml" ]]; then
+          rm -f {{ .CONFIG_PATH }}
+        fi
 
   destroy-kind:
     desc: "Delete the kind cluster and cleanup related resources"
     vars:
       CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
+      CONFIG_PATH: '{{ .CONFIG_PATH | default "/tmp/kind-config-${CLUSTER_NAME}.yaml" }}'
     cmds:
       - |
         # Check if the cluster exists
         if kind get clusters | grep -q "^{{ .CLUSTER_NAME }}$"; then
           echo "Deleting kind cluster: {{ .CLUSTER_NAME }}"
           kind delete cluster --name {{ .CLUSTER_NAME }}
+
+          # Cleanup config file if using default temp location
+          if [[ "{{ .CONFIG_PATH }}" == "/tmp/kind-config-${CLUSTER_NAME}.yaml" ]]; then
+            rm -f {{ .CONFIG_PATH }}
+          fi
         else
           echo "No cluster named '{{ .CLUSTER_NAME }}' found"
           exit 0
         fi
 
-        # Additional cleanup for Docker resources (optional but thorough)
+        # Additional cleanup for Docker resources
         echo "Cleaning up any remaining Docker resources..."
         docker container prune -f
         docker network prune -f
