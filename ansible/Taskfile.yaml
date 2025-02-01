@@ -2,6 +2,24 @@
 version: "3"
 
 tasks:
+  act:
+    desc: "Run GitHub Actions molecule workflow using act. Optionally specify component with COMPONENT=name"
+    vars:
+      COMPONENT: '{{ .COMPONENT | default "" }}'
+      ARCH_FLAG: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}--container-architecture linux/arm64{{end}}'
+      MATRIX_FILTER: '{{if .COMPONENT}}{{if hasPrefix "roles/" (printf "roles/%s" .COMPONENT)}}jobs.role_test.strategy.matrix.include[] | select(.path == "roles/{{.COMPONENT}}"){{else if hasPrefix "playbooks/" (printf "playbooks/%s" .COMPONENT)}}jobs.playbook_test.strategy.matrix.include[] | select(.path == "playbooks/{{.COMPONENT}}"){{end}}{{end}}'
+    preconditions:
+      - sh: "[ -z '{{.COMPONENT}}' ] || { [ -d 'roles/{{.COMPONENT}}' ] || [ -d 'playbooks/{{.COMPONENT}}' ]; }"
+        msg: "Component '{{.COMPONENT}}' not found in roles/ or playbooks/"
+    cmds:
+      - |
+        {{if .COMPONENT}}
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} --matrix "$(jq -c '{{.MATRIX_FILTER}}' .github/workflows/molecule.yaml)"
+        {{else}}
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}}
+        {{end}}
+    silent: true
+
   changelog-lint:
     desc: "Lint the changelog"
     cmds:
@@ -11,6 +29,18 @@ tasks:
     desc: "Generate the changelog release"
     cmds:
       - antsibull-changelog release --version $NEXT_VERSION
+
+  gen-changelog:
+    desc: "Generate the changelog for the next release"
+    cmds:
+      - |
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+      - echo "Generating changelog for release $NEXT_VERSION"
+      - task: ansible:changelog-lint
+      - task: ansible:changelog-release
 
   lint-ansible:
     desc: "Run Ansible Lint"
