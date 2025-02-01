@@ -1,25 +1,6 @@
 ---
 version: "3"
-
 tasks:
-  act:
-    desc: "Run GitHub Actions molecule workflow using act. Optionally specify component with COMPONENT=name"
-    vars:
-      COMPONENT: '{{ .COMPONENT | default "" }}'
-      ARCH_FLAG: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}--container-architecture linux/arm64{{end}}'
-      MATRIX_FILTER: '{{if .COMPONENT}}{{if hasPrefix "roles/" (printf "roles/%s" .COMPONENT)}}jobs.role_test.strategy.matrix.include[] | select(.path == "roles/{{.COMPONENT}}"){{else if hasPrefix "playbooks/" (printf "playbooks/%s" .COMPONENT)}}jobs.playbook_test.strategy.matrix.include[] | select(.path == "playbooks/{{.COMPONENT}}"){{end}}{{end}}'
-    preconditions:
-      - sh: "[ -z '{{.COMPONENT}}' ] || { [ -d 'roles/{{.COMPONENT}}' ] || [ -d 'playbooks/{{.COMPONENT}}' ]; }"
-        msg: "Component '{{.COMPONENT}}' not found in roles/ or playbooks/"
-    cmds:
-      - |
-        {{if .COMPONENT}}
-          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} --matrix "$(jq -c '{{.MATRIX_FILTER}}' .github/workflows/molecule.yaml)"
-        {{else}}
-          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}}
-        {{end}}
-    silent: true
-
   changelog-lint:
     desc: "Lint the changelog"
     cmds:
@@ -48,6 +29,45 @@ tasks:
       - |
         echo "Running ansible-lint."
         ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
+    silent: true
+
+  run-molecule-action:
+    desc: "Run GitHub Actions molecule workflow using act. Optionally specify ROLE or PLAYBOOK"
+    vars:
+      ROLE: '{{ .ROLE | default "" }}'
+      PLAYBOOK: '{{ .PLAYBOOK | default "" }}'
+      IS_MAC_ARM: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}true{{else}}false{{end}}'
+      ARCH_FLAG: '{{if eq .IS_MAC_ARM "true"}}--container-architecture linux/amd64{{end}}'
+      MATRIX_FILTER: |
+        {{if .ROLE}}
+          .jobs.role_test.strategy.matrix.include[] | select(.path == "roles/{{.ROLE}}")
+        {{else if .PLAYBOOK}}
+          .jobs.playbook_test.strategy.matrix.include[] | select(.path == "playbooks/{{.PLAYBOOK}}")
+        {{end}}
+    preconditions:
+      - sh: |
+          [ -z '{{.ROLE}}' ] || [ -d 'roles/{{.ROLE}}' ] || exit 1
+        msg: "Role '{{.ROLE}}' not found in roles/"
+      - sh: |
+          [ -z '{{.PLAYBOOK}}' ] || [ -d 'playbooks/{{.PLAYBOOK}}' ] || exit 1
+        msg: "Playbook '{{.PLAYBOOK}}' not found in playbooks/"
+      - sh: "[ -z '{{.ROLE}}' ] || [ -z '{{.PLAYBOOK}}' ]"
+        msg: "Specify either ROLE or PLAYBOOK, not both"
+      - sh: |
+          if [ "{{.IS_MAC_ARM}}" = "true" ]; then
+            echo "⚠ Running on Apple M-series chip. Using linux/amd64 architecture for compatibility."
+          fi
+        msg: ""
+    cmds:
+      - |
+        # Clean up any existing act containers
+        docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
+        if [ -n "{{.ROLE}}" ] || [ -n "{{.PLAYBOOK}}" ]; then
+          FILTER='{{.MATRIX_FILTER}}'
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} --matrix "$(yq eval -o=json .github/workflows/molecule.yaml | jq -c "[$FILTER]")"
+        else
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}}
+        fi
     silent: true
 
   run-molecule-tests:
