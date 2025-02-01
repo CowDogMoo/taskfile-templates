@@ -16,24 +16,24 @@ including molecule testing, linting, and changelog management.
 
 ## 🎯 Available Tasks
 
-### act
+### run-molecule-action
 
-Runs GitHub Actions molecule workflow locally using act, with optional
-component targeting.
+Runs GitHub Actions molecule workflow locally using
+[act](https://github.com/nektos/act), with optional component targeting.
 
 **Variables:**
 
 - `COMPONENT`: Specific role or playbook to test (optional)
 
 ```bash
-# Run all tests
-task act
+# Run all molecule tests
+task run-molecule-action
 
 # Test specific role
-task act COMPONENT=asdf
+task run-molecule-action ROLE=asdf
 
 # Test specific playbook
-task act COMPONENT=workstation
+task run-molecule-action PLAYBOOK=workstation
 ```
 
 ### changelog-lint
