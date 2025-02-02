@@ -1,7 +1,7 @@
 # 🎭 Ansible Taskfile Tasks
 
-This directory contains reusable Taskfile tasks for Ansible development operations,
-including molecule testing, linting, and changelog management.
+This directory contains reusable Taskfile tasks for Ansible development
+operations, including molecule testing, linting, and changelog management.
 
 ## 📋 Prerequisites
 
@@ -13,20 +13,65 @@ including molecule testing, linting, and changelog management.
 - [jq](https://stedolan.github.io/jq/download/) installed (for JSON processing)
 - [antsibull-changelog](https://github.com/ansible-community/antsibull-changelog)
   installed
+- Docker installed (required for Molecule and act)
 
 ## 🎯 Available Tasks
 
-### run-molecule-action
+### changelog-lint
 
-Runs GitHub Actions molecule workflow locally using
-[act](https://github.com/nektos/act), with optional component targeting.
-
-**Variables:**
-
-- `COMPONENT`: Specific role or playbook to test (optional)
+Lints the changelog using antsibull-changelog to ensure it follows the proper format.
 
 ```bash
-# Run all molecule tests
+task changelog-lint
+```
+
+### changelog-release
+
+Generates a changelog release for the specified version.
+
+```bash
+task changelog-release NEXT_VERSION=1.0.0
+```
+
+### gen-changelog
+
+Generates the complete changelog for the next release, including linting and
+release generation steps.
+
+**Required Variables:**
+
+- `NEXT_VERSION`: Version number for the release (e.g., 1.0.0)
+
+```bash
+task gen-changelog NEXT_VERSION=1.0.0
+```
+
+### lint-ansible
+
+Runs Ansible Lint with custom configuration from `.hooks/linters/ansible-lint.yaml`.
+
+```bash
+task lint-ansible
+```
+
+### run-molecule-action
+
+Runs GitHub Actions molecule workflow locally using act. Supports testing
+specific components. This task expects a GitHub Actions workflow file at
+`.github/workflows/molecule.yaml`. See example workflow implementations:
+
+- [workstation-collection/molecule.yaml](https://github.com/CowDogMoo/ansible-collection-workstation/blob/main/.github/workflows/molecule.yaml)
+  - Example workflow for testing workstation configuration roles
+- [arsenal-collection/molecule.yaml](https://github.com/l50/ansible-collection-arsenal/blob/main/.github/workflows/molecule.yaml)
+  - Example workflow for testing security tooling roles
+
+**Optional Variables:**
+
+- `ROLE`: Name of the specific role to test
+- `PLAYBOOK`: Name of the specific playbook to test
+
+```bash
+# Run all tests
 task run-molecule-action
 
 # Test specific role
@@ -36,71 +81,25 @@ task run-molecule-action ROLE=asdf
 task run-molecule-action PLAYBOOK=workstation
 ```
 
-### changelog-lint
-
-Lints the changelog using antsibull-changelog.
-
-```bash
-# Lint changelog
-task changelog-lint
-```
-
-### changelog-release
-
-Generates a changelog release with the specified version.
-
-```bash
-# Generate release changelog
-task changelog-release
-```
-
-### gen-changelog
-
-Generates the changelog for the next release, including linting and release generation.
-
-**Variables:**
-
-- `NEXT_VERSION`: Version number for the release (required)
-
-```bash
-# Generate changelog for version 1.0.0
-task gen-changelog NEXT_VERSION=1.0.0
-```
-
-### lint-ansible
-
-Runs Ansible Lint with custom configuration.
-
-```bash
-# Run ansible-lint
-task lint-ansible
-```
-
 ### run-molecule-tests
 
-Runs Molecule tests for all roles in the collection.
+Executes Molecule tests for all roles in the collection sequentially.
 
 ```bash
-# Run all molecule tests
 task run-molecule-tests
-
-# Tests will:
-# - Create logs directory
-# - Use project-specific ansible.cfg
-# - Test each role sequentially
-# - Log output to logs/molecule_tests.log
 ```
 
 ## 🔍 Important Notes
 
-- All tasks include proper error handling and logging
-- Molecule tests are run with project-specific ansible.cfg
-- Changelog generation requires proper version specification
-- GitHub Actions local testing supports ARM64 architecture on macOS
+- All tasks include proper error handling and logging to `logs/molecule_tests.log`
+- Molecule tests use the project-specific `ansible.cfg` configuration
+- The `run-molecule-action` task automatically handles ARM64 architecture on macOS
+- Docker containers are automatically cleaned up between test runs
+- All changelog operations require proper version specification
 
-## 🔧 Extending Tasks
+## 🔧 Importing Tasks
 
-Import these tasks in your own Taskfile:
+Include these tasks in your own Taskfile:
 
 ```yaml
 version: "3"
@@ -110,15 +109,10 @@ includes:
 tasks:
   test-and-release:
     cmds:
-      # Run all tests
       - task: ansible:run-molecule-tests
-
-      # Generate changelog
       - task: ansible:gen-changelog
         vars:
           NEXT_VERSION: 1.0.0
-
-      # Lint everything
       - task: ansible:lint-ansible
 ```
 
@@ -134,6 +128,8 @@ tasks:
 │   └── zsh_setup/
 ├── playbooks/
 │   └── workstation/
+├── logs/
+│   └── molecule_tests.log
 └── .hooks/
     └── linters/
         └── ansible-lint.yaml
@@ -141,10 +137,12 @@ tasks:
 
 ## 🤝 Contributing
 
-1. Ensure all tests pass: `task run-molecule-tests`
-2. Lint your changes: `task lint-ansible`
-3. Update changelog: `task gen-changelog NEXT_VERSION=x.y.z`
-4. Submit your PR
+1. Fork the repository
+2. Create a new branch for your changes
+3. Ensure all tests pass: `task run-molecule-tests`
+4. Lint your changes: `task lint-ansible`
+5. Update changelog: `task gen-changelog NEXT_VERSION=x.y.z`
+6. Submit your PR
 
 ## 📜 License
 
