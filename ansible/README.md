@@ -43,7 +43,19 @@ release generation steps.
 - `NEXT_VERSION`: Version number for the release (e.g., 1.0.0)
 
 ```bash
+# Standard usage
 task gen-changelog NEXT_VERSION=1.0.0
+
+# Using with remote taskfiles
+TASK_X_REMOTE_TASKFILES=1 NEXT_VERSION=2.0.0 task ansible:gen-changelog
+```
+
+Example output:
+
+```bash
+task: [ansible:gen-changelog] Generating changelog for release 2.0.0
+task: [ansible:changelog-lint] antsibull-changelog lint
+task: [ansible:changelog-release] antsibull-changelog release --version $NEXT_VERSION
 ```
 
 ### lint-ansible
@@ -105,7 +117,6 @@ Include these tasks in your own Taskfile:
 version: "3"
 includes:
   ansible: "./path/to/ansible/Taskfile.yaml"
-
 tasks:
   test-and-release:
     cmds:

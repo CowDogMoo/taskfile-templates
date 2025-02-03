@@ -1,5 +1,6 @@
 ---
 version: "3"
+
 tasks:
   changelog-lint:
     desc: "Lint the changelog"
@@ -20,8 +21,8 @@ tasks:
           exit 1
         fi
       - echo "Generating changelog for release $NEXT_VERSION"
-      - task: ansible:changelog-lint
-      - task: ansible:changelog-release
+      - task: changelog-lint
+      - task: changelog-release
 
   lint-ansible:
     desc: "Run Ansible Lint"
@@ -42,7 +43,6 @@ tasks:
       - |
         # Clean up any existing act containers
         docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
-
         if [ -n "{{.ROLE}}" ]; then
           echo '{"inputs":{"ROLE":"{{.ROLE}}"}}' > /tmp/github-event.json
           act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
