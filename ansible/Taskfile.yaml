@@ -9,6 +9,7 @@ tasks:
 
   changelog-release:
     desc: "Generate the changelog release"
+    deps: [update-galaxy-version]
     cmds:
       - antsibull-changelog release --version $NEXT_VERSION
 
@@ -67,4 +68,20 @@ tasks:
             (cd "$role" && molecule test) | tee -a logs/molecule_tests.log || exit 1
           fi
         done
+    silent: true
+
+  update-galaxy-version:
+    desc: "Update version in galaxy.yml if it exists"
+    cmds:
+      - |
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set."
+          exit 1
+        fi
+        if [ -f "galaxy.yml" ]; then
+          yq e -i '.version = env(NEXT_VERSION)' galaxy.yml
+          echo "Updated galaxy.yml version to $NEXT_VERSION"
+        else
+          echo "No galaxy.yml found, skipping version update"
+        fi
     silent: true
