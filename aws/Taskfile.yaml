@@ -22,7 +22,7 @@ tasks:
         fi
     silent: true
 
-  list-instances:
+  list-running-instances:
     desc: "List all running EC2 instances with details"
     deps:
       - check-aws

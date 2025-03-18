@@ -28,12 +28,12 @@ Validates that jq is installed on your system.
 task check-jq
 ```
 
-### list-instances
+### list-running-instances
 
 Lists all running EC2 instances with detailed information.
 
 ```bash
-task list-instances REGION=us-east-2
+task list-running-instances REGION=us-east-2
 ```
 
 Optional variables:
@@ -76,7 +76,7 @@ Optional variables:
 1. **Listing all running EC2 instances in a specific region:**
 
 ```bash
-task list-instances REGION=us-west-2
+task list-running-instances REGION=us-west-2
 ```
 
 2. **Finding and scheduling deletion of unused KMS keys with a custom deletion window:**
@@ -106,8 +106,8 @@ includes:
 
 tasks:
   # Override or extend existing tasks
-  list-instances-enhanced:
-    deps: [aws:list-instances]
+  list-running-instances-enhanced:
+    deps: [aws:list-running-instances]
     cmds:
       - echo "Additional processing of instance data..."
 
