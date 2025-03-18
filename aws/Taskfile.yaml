@@ -22,6 +22,21 @@ tasks:
         fi
     silent: true
 
+  list-instances:
+    desc: "List all running EC2 instances with details"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        aws ec2 describe-instances \
+          --query "Reservations[*].Instances[*].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}" \
+          --filters Name=instance-state-name,Values=running \
+          --region {{.REGION}} \
+          --output json
+
+
   cleanup-kms:
     desc: "Find and schedule deletion of unused KMS keys (those without Name tags)"
     deps:
