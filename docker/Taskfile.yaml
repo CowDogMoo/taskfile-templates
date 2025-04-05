@@ -1,0 +1,44 @@
+---
+version: "3"
+
+tasks:
+  list-docker-mounts:
+    desc: "List all Docker containers with their mount points"
+    cmds:
+      - |
+        # Get all container IDs
+        CONTAINER_IDS=$(docker ps -a --format '{{ "{{" }} .ID {{ "}}" }}')
+
+        if [ -z "$CONTAINER_IDS" ]; then
+          echo "No containers found"
+          exit 0
+        fi
+
+        # Iterate through each container and display its mounts
+        echo "Listing all containers with their mount points:"
+        echo "----------------------------------------------"
+
+        for CONTAINER_ID in $CONTAINER_IDS; do
+          docker inspect -f '{{ "{{" }} .Name {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}{{ "{{" }} range .Mounts {{ "}}" }}{{ "{{" }} printf "\n\t" {{ "}}" }}{{ "{{" }} .Type {{ "}}" }} {{ "{{" }} if eq .Type "bind" {{ "}}" }}{{ "{{" }} .Source {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} .Name {{ "}}" }} => {{ "{{" }} .Destination {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}' $CONTAINER_ID
+        done
+
+  list-container-mounts:
+    desc: "List mount points for a specific container"
+    vars:
+      CONTAINER: '{{ .CONTAINER | default "" }}'
+    cmds:
+      - |
+        if [ -z "{{ .CONTAINER }}" ]; then
+          echo "Error: Container name or ID not provided"
+          echo "Usage: task list-container-mounts CONTAINER=container_name_or_id"
+          exit 1
+        fi
+
+        if ! docker inspect {{ .CONTAINER }} >/dev/null 2>&1; then
+          echo "Error: Container '{{ .CONTAINER }}' not found"
+          exit 1
+        fi
+
+        echo "Listing mount points for container '{{ .CONTAINER }}':"
+        echo "------------------------------------------------------"
+        docker inspect -f '{{ "{{" }} .Name {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}{{ "{{" }} range .Mounts {{ "}}" }}{{ "{{" }} printf "\n\t" {{ "}}" }}{{ "{{" }} .Type {{ "}}" }} {{ "{{" }} if eq .Type "bind" {{ "}}" }}{{ "{{" }} .Source {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} .Name {{ "}}" }} => {{ "{{" }} .Destination {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}' {{ .CONTAINER }}
