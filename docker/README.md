@@ -10,6 +10,14 @@ providing simple commands to inspect and list container mount points.
 
 ## 🎯 Available Tasks
 
+### check-docker
+
+Validates that Docker is installed and running on your system.
+
+```bash
+task check-docker
+```
+
 ### list-docker-mounts
 
 Lists all Docker containers with their mount points, showing both volume and

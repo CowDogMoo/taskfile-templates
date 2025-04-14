@@ -2,6 +2,20 @@
 version: "3"
 
 tasks:
+  check-docker:
+    desc: "Validate that Docker is installed and running"
+    cmds:
+      - |
+        if ! command -v docker &> /dev/null; then
+          echo "Docker is not installed. Please install Docker to continue."
+          exit 1
+        fi
+        if ! docker info &> /dev/null; then
+          echo "Docker daemon is not running. Please start Docker to continue."
+          exit 1
+        fi
+    silent: true
+
   list-docker-mounts:
     desc: "List all Docker containers with their mount points"
     cmds:

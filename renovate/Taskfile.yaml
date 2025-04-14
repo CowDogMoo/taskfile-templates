@@ -1,21 +1,9 @@
 ---
 version: "3"
+includes:
+  docker: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
 
 tasks:
-  check-docker:
-    desc: "Validate that Docker is installed and running"
-    cmds:
-      - |
-        if ! command -v docker &> /dev/null; then
-          echo "Docker is not installed. Please install Docker to continue."
-          exit 1
-        fi
-        if ! docker info &> /dev/null; then
-          echo "Docker daemon is not running. Please start Docker to continue."
-          exit 1
-        fi
-    silent: true
-
   check-repository-format:
     desc: "Validate repository format matches org/repo pattern"
     cmds:
@@ -30,8 +18,8 @@ tasks:
   renovate-docker-debug:
     desc: "Run Renovate in a Docker container with debugging enabled"
     deps:
-      - check-docker
       - check-repository-format
+      - task: docker:check-docker
     cmds:
       - |
         # Ensure required environment variables are set
@@ -40,8 +28,12 @@ tasks:
           exit 1
         fi
 
+        # Define base directory explicitly
+        BASE_DIR="${PWD}"
+        echo "Base directory: $BASE_DIR"
+
         # Create cache directory if it doesn't exist
-        mkdir -p .cache
+        mkdir -p "$BASE_DIR/.cache"
 
         # Extract org and repo for potential use in validation
         ORG=$(echo "{{.REPOSITORY}}" | cut -d'/' -f1)
@@ -54,6 +46,47 @@ tasks:
             exit 1
           fi
         fi
+
+        # Create a fresh Git repo for Renovate to work with
+        TEMP_GIT_DIR="$BASE_DIR/.cache/renovate-git-repo"
+        echo "Preparing fresh git repository for Renovate at $TEMP_GIT_DIR"
+        rm -rf "$TEMP_GIT_DIR"
+        mkdir -p "$TEMP_GIT_DIR"
+        cd "$TEMP_GIT_DIR"
+
+        # Clone the target repository
+        echo "Cloning {{.REPOSITORY}} into temporary directory..."
+        git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" .
+
+        # Initialize submodules if needed
+        if [ "{{.INIT_SUBMODULES | default "true"}}" = "true" ] && [ -f ".gitmodules" ]; then
+          echo "Initializing git submodules..."
+          git submodule update --init --recursive
+        fi
+
+        # Copy your renovate config to the temporary repo
+        CONFIG_PATH="$BASE_DIR/{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
+        if [ -f "$CONFIG_PATH" ]; then
+          mkdir -p "$(dirname "{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}")"
+          cp "$CONFIG_PATH" "{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
+        fi
+
+        # Return to original directory
+        cd "$BASE_DIR"
+
+        # Create temporary gitconfig for the container
+        TMP_GITCONFIG="$BASE_DIR/.cache/tmp_gitconfig"
+        echo "[safe]" > "$TMP_GITCONFIG"
+        echo "  directory = /tmp/renovate/repository" >> "$TMP_GITCONFIG"
+        echo "[url \"https://github.com/\"]" >> "$TMP_GITCONFIG"
+        echo "  insteadOf = git@github.com:" >> "$TMP_GITCONFIG"
+        echo "[credential]" >> "$TMP_GITCONFIG"
+        echo "  helper = store" >> "$TMP_GITCONFIG"
+
+        # Create git credentials file
+        GIT_CREDENTIALS_FILE="$BASE_DIR/.cache/git-credentials"
+        rm -rf "$GIT_CREDENTIALS_FILE"  # Remove in case it's a directory
+        echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > "$GIT_CREDENTIALS_FILE"
 
         # Run Renovate in Docker with configurable parameters
         docker run --rm -it \
@@ -70,11 +103,36 @@ tasks:
           -e RENOVATE_ENDPOINT="{{.ENDPOINT | default "https://api.github.com"}}" \
           -e RENOVATE_REPOSITORY="{{.REPOSITORY}}" \
           -e RENOVATE_FORK="{{.FORK | default "false"}}" \
-          -v "${PWD}/{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}:/usr/src/app/renovate.json5" \
-          -v "${PWD}:/tmp/renovate/repository" \
-          -v "${PWD}/.cache:/tmp/renovate/cache" \
+          -e RENOVATE_INCLUDE_SUBMODULES="{{.INCLUDE_SUBMODULES | default "true"}}" \
+          -e GIT_CONFIG_GLOBAL="/tmp/gitconfig" \
+          -e HOME="/tmp" \
+          -e XDG_CONFIG_HOME="/tmp/config" \
+          -e GIT_TERMINAL_PROMPT=0 \
+          -e GIT_ASKPASS=/bin/echo \
+          -v "$CONFIG_PATH:/usr/src/app/renovate.json5" \
+          -v "$TEMP_GIT_DIR:/tmp/renovate/repository" \
+          -v "$BASE_DIR/.cache:/tmp/renovate/cache" \
+          -v "$TMP_GITCONFIG:/tmp/gitconfig" \
+          -v "$GIT_CREDENTIALS_FILE:/tmp/.git-credentials" \
+          {{.DOCKER_EXTRA_FLAGS | default ""}} \
           --user=$(id -u):$(id -g) \
           {{.RENOVATE_IMAGE | default "ghcr.io/renovatebot/renovate:latest"}} \
-          {{.REPOSITORY}} | tee {{.LOG_FILE | default "renovate-debug.log"}}
+          {{.REPOSITORY}} | tee "$BASE_DIR/{{.LOG_FILE | default "renovate-debug.log"}}"
+
+        # Clean up sensitive files and cache if requested
+        if [ "{{.CLEANUP | default "true"}}" = "true" ]; then
+          echo "Cleaning up temporary files and sensitive data..."
+          rm -rf "$BASE_DIR/.cache/git-credentials"
+          rm -f "$BASE_DIR/.cache/tmp_gitconfig"
+
+          # Optionally remove all cache - can add parameter to control this
+          if [ "{{.CLEANUP_ALL | default "false"}}" = "true" ]; then
+            echo "Removing all cached files..."
+            rm -rf "$BASE_DIR/.cache"
+          else
+            # Just clean up the git repo to save space
+            rm -rf "$TEMP_GIT_DIR"
+          fi
+        fi
     requires:
       vars: ['REPOSITORY']

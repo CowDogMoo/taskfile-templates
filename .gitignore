@@ -2,3 +2,4 @@
 .task/
 logs
 TODO
+*.log
