@@ -2,12 +2,13 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:base",
+    "docker:enableMajor",
     ":disableRateLimiting",
     ":dependencyDashboard",
     ":semanticCommits",
     ":enablePreCommit",
     ":automergeDigest",
-    ":automergeBranch"
+    ":automergeBranch",
     "helpers:pinGitHubActionDigests"
   ],
   "dependencyDashboardTitle": "Renovate Dashboard 🤖",
@@ -17,12 +18,6 @@
   "pre-commit": {
     "enabled": true
   },
-  "postUpgradeTasks": {
-    "commands": [
-      "pre-commit run --all-files || git add -A && pre-commit run --all-files"
-    ],
-    "executionMode": "update"
-  },
   "packageRules": [
     {
       "description": "Auto merge GitHub Actions minor and patch updates",
@@ -30,7 +25,8 @@
       "matchDatasources": ["github-tags"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true,
-      "automergeType": "branch"
+      "automergeType": "branch",
+      "matchUpdateTypes": ["digest"]
     },
     {
       "description": "Auto merge non-major updates for other dependencies",
@@ -38,7 +34,7 @@
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "merge-queue",
-      "matchManagers": ["npm", "gomod", "terraform", "pre-commit", "regex"]
+      "matchManagers": ["pre-commit", "regex"]
     }
   ]
 }
