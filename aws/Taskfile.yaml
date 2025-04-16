@@ -201,3 +201,66 @@ tasks:
             echo "Failed to delete file system {{.FILE_SYSTEM_ID}}."
             exit 1
         fi
+
+  cleanup-bucket:
+    desc: "Delete S3 buckets matching a name pattern"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      REGION: '{{.REGION | default "us-west-1"}}'
+      BUCKET_PREFIX: '{{.BUCKET_PREFIX | default "attack-box-bucket-"}}'
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+    cmds:
+      - |
+        echo "Finding S3 buckets with prefix: {{.BUCKET_PREFIX}} in region {{.REGION}}"
+        BUCKETS=$(aws s3api list-buckets | jq -r '.Buckets[] | select(.Name | startswith("{{.BUCKET_PREFIX}}")) | .Name')
+
+        if [ -z "$BUCKETS" ]; then
+          echo "No buckets found matching prefix {{.BUCKET_PREFIX}}"
+          exit 0
+        fi
+
+        BUCKET_COUNT=$(echo "$BUCKETS" | wc -l | tr -d ' ')
+        echo "Found $BUCKET_COUNT bucket(s) matching the prefix {{.BUCKET_PREFIX}}"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No buckets will be deleted. Matching buckets:"
+          echo "$BUCKETS"
+          exit 0
+        fi
+
+        echo "Proceeding with bucket deletion..."
+        ERRORS=0
+
+        for BUCKET in $BUCKETS; do
+          echo "----------------------------------------"
+          echo "Processing bucket: $BUCKET"
+
+          # First, empty the bucket (required before deletion)
+          echo "Emptying bucket contents..."
+          aws s3 rm s3://$BUCKET --recursive --region {{.REGION}} || {
+            echo "Error: Failed to empty bucket $BUCKET"
+            ((ERRORS++))
+            continue
+          }
+
+          # Delete the bucket
+          echo "Deleting bucket..."
+          aws s3api delete-bucket --bucket $BUCKET --region {{.REGION}} || {
+            echo "Error: Failed to delete bucket $BUCKET"
+            ((ERRORS++))
+            continue
+          }
+
+          echo "Successfully deleted bucket: $BUCKET"
+          echo "----------------------------------------"
+        done
+
+        if [ $ERRORS -gt 0 ]; then
+          echo "Bucket cleanup completed with $ERRORS error(s)"
+          exit 1
+        else
+          echo "Bucket cleanup completed successfully. All $BUCKET_COUNT buckets deleted."
+          exit 0
+        fi

@@ -71,25 +71,61 @@ Optional variables:
 
 - `REGION`: AWS region where the EFS file system is located (defaults to 'us-east-2')
 
+### cleanup-bucket
+
+Deletes S3 buckets that match a specified prefix pattern.
+
+```bash
+task cleanup-bucket BUCKET_PREFIX=attack-box-bucket- REGION=us-west-1 DRY_RUN=true
+```
+
+Optional variables:
+
+- `REGION`: AWS region where the buckets are located (defaults to 'us-west-1')
+- `BUCKET_PREFIX`: Prefix pattern to match bucket names (defaults to 'attack-box-bucket-')
+- `DRY_RUN`: When set to 'true', lists buckets without deleting them (defaults
+  to 'false')
+
+This task:
+
+1. Lists all S3 buckets matching the specified name prefix
+1. Empties each bucket's contents (required before deletion)
+1. Deletes the buckets
+1. Provides detailed progress and error reporting
+
+Example usage:
+
+```bash
+# List buckets matching a pattern without deleting (dry run)
+task cleanup-bucket BUCKET_PREFIX=test-bucket- DRY_RUN=true
+
+# Delete all buckets with the prefix "temp-data-" in us-east-1
+task cleanup-bucket BUCKET_PREFIX=temp-data- REGION=us-east-1
+```
+
+⚠️ **Warning**: This will permanently delete the matching buckets and all their
+contents. Use the `DRY_RUN=true` option first to verify which buckets will be
+affected.
+
 ## 📝 Example Usage
 
 1. **Listing all running EC2 instances in a specific region:**
 
-```bash
-task list-running-instances REGION=us-west-2
-```
+   ```bash
+   task list-running-instances REGION=us-west-2
+   ```
 
-2. **Finding and scheduling deletion of unused KMS keys with a custom deletion window:**
+1. **Finding and scheduling deletion of unused KMS keys with a custom deletion window:**
 
-```bash
-task cleanup-kms REGION=us-east-1 DAYS_TO_DELETION=14
-```
+   ```bash
+   task cleanup-kms REGION=us-east-1 DAYS_TO_DELETION=14
+   ```
 
-3. **Deleting an EFS file system:**
+1. **Deleting an EFS file system:**
 
-```bash
-task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-east-2
-```
+   ```bash
+   task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-east-2
+   ```
 
 ## 🔧 Extending Tasks
 
