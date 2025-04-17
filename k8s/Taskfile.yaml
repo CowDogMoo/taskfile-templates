@@ -9,6 +9,13 @@ tasks:
       CONFIG_PATH: '{{ .CONFIG_PATH | default "/tmp/kind-config-${CLUSTER_NAME}.yaml" }}'
     cmds:
     - |
+        # Check for kind binary
+        if ! command -v kind &> /dev/null; then
+          echo "Error: 'kind' binary not found in PATH"
+          echo "Please install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+          exit 1
+        fi
+
         # Create config directory if it doesn't exist
         mkdir -p "$(dirname {{ .CONFIG_PATH }})"
 
@@ -183,6 +190,20 @@ tasks:
       ARGOCD_VERSION: '{{ .ARGOCD_VERSION | default "5.51.6" }}'
       ARGOCD_PASSWORD: '{{ .ARGOCD_PASSWORD | default "admin" }}'
     cmds:
+      - |
+        # Check for helm binary
+        if ! command -v helm &> /dev/null; then
+          echo "Error: 'helm' binary not found in PATH"
+          echo "Please install helm: https://helm.sh/docs/intro/install/"
+          exit 1
+        fi
+
+        # Check for Python bcrypt module
+        if ! python3 -c "import bcrypt" &> /dev/null; then
+          echo "Error: Python 'bcrypt' module not found"
+          echo "Please install it with: python3 -m pip install bcrypt"
+          exit 1
+        fi
       - task: setup-helm
         vars:
           HELM_RELEASE: argocd
