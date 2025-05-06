@@ -37,60 +37,49 @@ tasks:
     desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows and Linux hosts."
     vars:
       INVENTORY: '{{.INVENTORY}}'
-      HOSTS: '{{.HOSTS | default "all"}}'
-      DEBUG: '{{.DEBUG | default "false"}}'
-      OS_TYPE: '{{.OS_TYPE | default "auto"}}'
+      HOSTS:     '{{.HOSTS | default "all"}}'
+      DEBUG:     '{{.DEBUG | default "false"}}'
+      OS_TYPE:   '{{.OS_TYPE | default "auto"}}'
     cmds:
       - |
-        # For explicit OS type, just use the appropriate module
+        # Explicit OS_TYPE shortcuts
         if [ "{{.OS_TYPE}}" = "windows" ]; then
           echo "Using win_ping module for all hosts (OS_TYPE=windows)"
-          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
           exit $?
         elif [ "{{.OS_TYPE}}" = "linux" ]; then
           echo "Using ping module for all hosts (OS_TYPE=linux)"
-          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
           exit $?
         fi
 
-        # When OS_TYPE=auto (default), we need to handle mixed environments
-        echo "Auto-detecting host types for ping..."
+        # Auto-detect & ping once per host via an inline playbook
+        echo "Auto-detecting host types and pinging each host…"
 
-        # Check if we have Linux hosts
-        echo "Pinging Linux hosts..."
-        LINUX_RESULT=0
-        LINUX_HOSTS=$(ansible -i "{{.INVENTORY}}" -m ping {{.HOSTS}} 2>/dev/null | grep SUCCESS | awk '{print $1}' | tr -d ':' | tr '\n' ',')
-        if [ -n "$LINUX_HOSTS" ]; then
-          echo "Successfully pinged Linux hosts: $LINUX_HOSTS"
-        fi
+        PLAYBOOK_FILE=$(mktemp /tmp/ping_playbook.XXXXXX.yml)
+        cat > "$PLAYBOOK_FILE" <<'EOF'
+        ---
+        - hosts: {{.HOSTS}}
+          gather_facts: yes
+          tasks:
+            - name: Ping Linux hosts
+              ping:
+              when: ansible_facts.os_family != 'Windows'
 
-        # Check if we have Windows hosts
-        echo "Pinging Windows hosts..."
-        WIN_RESULT=0
-        WIN_HOSTS=$(ansible -i "{{.INVENTORY}}" -m win_ping {{.HOSTS}} 2>/dev/null | grep SUCCESS | awk '{print $1}' | tr -d ':' | tr '\n' ',')
-        if [ -n "$WIN_HOSTS" ]; then
-          echo "Successfully pinged Windows hosts: $WIN_HOSTS"
-        fi
+            - name: Ping Windows hosts
+              win_ping:
+              when: ansible_facts.os_family == 'Windows'
+        EOF
 
-        # Print combined successful results
         echo "===== PING RESULTS ====="
-        if [ -n "$LINUX_HOSTS" ]; then
-          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible -i "{{.INVENTORY}}" -m ping ${LINUX_HOSTS%,}
-        fi
+        {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+          ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK_FILE"
+        RET=$?
 
-        if [ -n "$WIN_HOSTS" ]; then
-          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible -i "{{.INVENTORY}}" -m win_ping ${WIN_HOSTS%,}
-        fi
-
-        # Check if we covered all hosts
-        SUCCESSFUL_HOSTS="$LINUX_HOSTS$WIN_HOSTS"
-        if [ -z "$SUCCESSFUL_HOSTS" ]; then
-          echo "ERROR: No hosts could be pinged with either ping or win_ping!"
-          exit 1
-        fi
-
-        # Always exit successfully if at least one host was pinged
-        exit 0
+        rm -f "$PLAYBOOK_FILE"
+        exit $RET
     silent: false
 
   run-molecule-tests:
