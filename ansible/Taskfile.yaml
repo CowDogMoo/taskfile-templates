@@ -33,28 +33,65 @@ tasks:
         ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
     silent: true
 
-  run-molecule-action:
-    desc: "Run GitHub Actions molecule workflow using act. Optionally specify ROLE or PLAYBOOK"
+  ping:
+    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows and Linux hosts."
     vars:
-      ROLE: '{{.ROLE | default ""}}'
-      PLAYBOOK: '{{.PLAYBOOK | default ""}}'
-      IS_MAC_ARM: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}true{{else}}false{{end}}'
-      ARCH_FLAG: '{{if eq .IS_MAC_ARM "true"}}--container-architecture linux/amd64{{end}}'
+      INVENTORY: '{{.INVENTORY}}'
+      HOSTS: '{{.HOSTS | default "all"}}'
+      DEBUG: '{{.DEBUG | default "false"}}'
+      OS_TYPE: '{{.OS_TYPE | default "auto"}}'
     cmds:
       - |
-        # Clean up any existing act containers
-        docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
-        if [ -n "{{.ROLE}}" ]; then
-          echo '{"inputs":{"ROLE":"{{.ROLE}}"}}' > /tmp/github-event.json
-          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
-          rm /tmp/github-event.json
-        elif [ -n "{{.PLAYBOOK}}" ]; then
-          echo '{"inputs":{"PLAYBOOK":"{{.PLAYBOOK}}"}}' > /tmp/github-event.json
-          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
-          rm /tmp/github-event.json
-        else
-          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}}
+        # For explicit OS type, just use the appropriate module
+        if [ "{{.OS_TYPE}}" = "windows" ]; then
+          echo "Using win_ping module for all hosts (OS_TYPE=windows)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
+          exit $?
+        elif [ "{{.OS_TYPE}}" = "linux" ]; then
+          echo "Using ping module for all hosts (OS_TYPE=linux)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
+          exit $?
         fi
+
+        # When OS_TYPE=auto (default), we need to handle mixed environments
+        echo "Auto-detecting host types for ping..."
+
+        # Check if we have Linux hosts
+        echo "Pinging Linux hosts..."
+        LINUX_RESULT=0
+        LINUX_HOSTS=$(ansible -i "{{.INVENTORY}}" -m ping {{.HOSTS}} 2>/dev/null | grep SUCCESS | awk '{print $1}' | tr -d ':' | tr '\n' ',')
+        if [ -n "$LINUX_HOSTS" ]; then
+          echo "Successfully pinged Linux hosts: $LINUX_HOSTS"
+        fi
+
+        # Check if we have Windows hosts
+        echo "Pinging Windows hosts..."
+        WIN_RESULT=0
+        WIN_HOSTS=$(ansible -i "{{.INVENTORY}}" -m win_ping {{.HOSTS}} 2>/dev/null | grep SUCCESS | awk '{print $1}' | tr -d ':' | tr '\n' ',')
+        if [ -n "$WIN_HOSTS" ]; then
+          echo "Successfully pinged Windows hosts: $WIN_HOSTS"
+        fi
+
+        # Print combined successful results
+        echo "===== PING RESULTS ====="
+        if [ -n "$LINUX_HOSTS" ]; then
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible -i "{{.INVENTORY}}" -m ping ${LINUX_HOSTS%,}
+        fi
+
+        if [ -n "$WIN_HOSTS" ]; then
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}ansible -i "{{.INVENTORY}}" -m win_ping ${WIN_HOSTS%,}
+        fi
+
+        # Check if we covered all hosts
+        SUCCESSFUL_HOSTS="$LINUX_HOSTS$WIN_HOSTS"
+        if [ -z "$SUCCESSFUL_HOSTS" ]; then
+          echo "ERROR: No hosts could be pinged with either ping or win_ping!"
+          exit 1
+        fi
+
+        # Always exit successfully if at least one host was pinged
+        exit 0
+    silent: false
 
   run-molecule-tests:
     desc: "Run Molecule tests for all roles"
