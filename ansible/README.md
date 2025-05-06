@@ -1,8 +1,7 @@
 # 🎭 Ansible Taskfile Tasks
 
 This directory contains reusable Taskfile tasks for Ansible development
-operations, including molecule testing, linting, host reachability validation,
-and changelog management.
+operations, including molecule testing, linting, and changelog management.
 
 ## 📋 Prerequisites
 
@@ -14,13 +13,13 @@ and changelog management.
 - [jq](https://stedolan.github.io/jq/download/) installed (for JSON processing)
 - [antsibull-changelog](https://github.com/ansible-community/antsibull-changelog)
   installed
-- Docker installed (required for Molecule and `act`)
+- Docker installed (required for Molecule and act)
 
 ## 🎯 Available Tasks
 
 ### changelog-lint
 
-Lints the changelog using `antsibull-changelog` to ensure it follows the proper format.
+Lints the changelog using antsibull-changelog to ensure it follows the proper format.
 
 ```bash
 task changelog-lint
@@ -57,6 +56,14 @@ Example output:
 task: [ansible:gen-changelog] Generating changelog for release 2.0.0
 task: [ansible:changelog-lint] antsibull-changelog lint
 task: [ansible:changelog-release] antsibull-changelog release --version $NEXT_VERSION
+```
+
+### lint-ansible
+
+Runs Ansible Lint with custom configuration from `.hooks/linters/ansible-lint.yaml`.
+
+```bash
+task lint-ansible
 ```
 
 ### ping
@@ -126,32 +133,33 @@ Auto-detecting host types and pinging each…
 PLAY [all] *********************************************************************
 
 TASK [Gathering Facts] ********************************************************
-ok: [ashley-kali]
-ok: [vincent-kali]
-ok: [srv03]
+ok: [host1-ubuntu]
+ok: [host2-ubuntu]
+ok: [windows-host]
 ok: [localhost]
 
 TASK [Ping Windows hosts] *****************************************************
-ok: [srv03]
-ok: [dc01]
-skipping: [vincent-kali]
+ok: [windows-host]
+skipping: [host1-ubuntu]
+skipping: [host2-ubuntu]
 skipping: [localhost]
 
 TASK [Ping macOS hosts] *******************************************************
 ok: [localhost]
-skipping: [srv03]
-skipping: [dc01]
+skipping: [host1-ubuntu]
+skipping: [host2-ubuntu]
+skipping: [windows-host]
 
 TASK [Ping Linux hosts] *******************************************************
-ok: [vincent-kali]
-ok: [ashley-kali]
+ok: [host1-ubuntu]
+ok: [host2-ubuntu]
+skipping: [windows-host]
 skipping: [localhost]
-skipping: [srv03]
 
 PLAY RECAP ********************************************************************
-ashley-kali      : ok=2  changed=0  failed=0  skipped=2
-vincent-kali     : ok=2  changed=0  failed=0  skipped=2
-srv03            : ok=2  changed=0  failed=0  skipped=2
+host1-ubuntu     : ok=2  changed=0  failed=0  skipped=2
+host2-ubuntu     : ok=2  changed=0  failed=0  skipped=2
+windows-host     : ok=2  changed=0  failed=0  skipped=2
 localhost        : ok=2  changed=0  failed=0  skipped=2
 ```
 
@@ -162,12 +170,16 @@ localhost        : ok=2  changed=0  failed=0  skipped=2
   local macOS)
 - Cleans up temporary playbooks after execution
 
-Let me know if you want a table view of variables or more output formatting examples.
-
 ### run-molecule-action
 
-Runs GitHub Actions Molecule workflow locally using `act`. Useful for testing
-roles and playbooks prior to pushing.
+Runs GitHub Actions molecule workflow locally using act. Supports testing
+specific components. This task expects a GitHub Actions workflow file at
+`.github/workflows/molecule.yaml`. See example workflow implementations:
+
+- [workstation-collection/molecule.yaml](https://github.com/CowDogMoo/ansible-collection-workstation/blob/main/.github/workflows/molecule.yaml)
+  - Example workflow for testing workstation configuration roles
+- [arsenal-collection/molecule.yaml](https://github.com/l50/ansible-collection-arsenal/blob/main/.github/workflows/molecule.yaml)
+  - Example workflow for testing security tooling roles
 
 **Optional Variables:**
 
@@ -178,21 +190,16 @@ roles and playbooks prior to pushing.
 # Run all tests
 task run-molecule-action
 
-# Test a specific role
-task run-molecule-action ROLE=zsh_setup
+# Test specific role
+task run-molecule-action ROLE=asdf
 
-# Test a specific playbook
+# Test specific playbook
 task run-molecule-action PLAYBOOK=workstation
 ```
 
-See example workflows:
-
-- [workstation-collection/molecule.yaml](https://github.com/CowDogMoo/ansible-collection-workstation/blob/main/.github/workflows/molecule.yaml)
-- [arsenal-collection/molecule.yaml](https://github.com/l50/ansible-collection-arsenal/blob/main/.github/workflows/molecule.yaml)
-
 ### run-molecule-tests
 
-Runs Molecule tests for all roles in the collection sequentially and logs the output.
+Executes Molecule tests for all roles in the collection sequentially.
 
 ```bash
 task run-molecule-tests
@@ -201,11 +208,10 @@ task run-molecule-tests
 ## 🔍 Important Notes
 
 - All tasks include proper error handling and logging to `logs/molecule_tests.log`
-- Molecule tests rely on the local `ansible.cfg` configuration
-- `ping` task includes robust OS detection logic (Windows/macOS/Linux)
-- `run-molecule-action` supports macOS ARM64 compatibility automatically
-- Docker containers are cleaned up between test runs
-- Changelog generation requires explicit `NEXT_VERSION`
+- Molecule tests use the project-specific `ansible.cfg` configuration
+- The `run-molecule-action` task automatically handles ARM64 architecture on macOS
+- Docker containers are automatically cleaned up between test runs
+- All changelog operations require proper version specification
 
 ## 🔧 Importing Tasks
 
