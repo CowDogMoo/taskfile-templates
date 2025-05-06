@@ -33,6 +33,65 @@ tasks:
         ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
     silent: true
 
+  ping:
+    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows, Linux, and macOS hosts."
+    vars:
+      INVENTORY: '{{.INVENTORY}}'
+      HOSTS:     '{{.HOSTS | default "all"}}'
+      DEBUG:     '{{.DEBUG | default "false"}}'
+      OS_TYPE:   '{{.OS_TYPE | default "auto"}}'
+    cmds:
+      - |
+        #— explicit OS_TYPE shortcuts
+        if [ "{{.OS_TYPE}}" = "windows" ]; then
+          echo "Using win_ping module for {{.HOSTS}} (OS_TYPE=windows)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
+          exit $?
+        elif [ "{{.OS_TYPE}}" = "linux" ]; then
+          echo "Using ping module for {{.HOSTS}} (OS_TYPE=linux)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
+          exit $?
+        fi
+
+        #— auto-detect: build a tiny playbook and run it
+        echo "Auto-detecting host types and pinging each…"
+
+        # try Linux-style mktemp first; if it errors, fall back to macOS -t form
+        if PLAYBOOK=$(mktemp /tmp/ping_playbook.XXXXXX.yml 2>/dev/null); then
+          :
+        else
+          PLAYBOOK=$(mktemp -t ping_playbook).yml
+        fi
+
+        cat > "$PLAYBOOK" << 'EOF'
+        ---
+        - hosts: {{.HOSTS}}
+          gather_facts: yes
+          tasks:
+            - name: Ping Windows hosts
+              win_ping:
+              when: ansible_facts.os_family == 'Windows'
+
+            - name: Ping macOS hosts
+              ping:
+              when: ansible_facts['system'] == 'Darwin'
+
+            - name: Ping Linux hosts
+              ping:
+              when: ansible_facts['system'] == 'Linux'
+        EOF
+
+        echo "===== PING RESULTS ====="
+        {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+          ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK"
+        RET=$?
+
+        rm -f "$PLAYBOOK"
+        exit $RET
+    silent: false
+
   run-molecule-action:
     desc: "Run GitHub Actions molecule workflow using act. Optionally specify ROLE or PLAYBOOK"
     vars:
