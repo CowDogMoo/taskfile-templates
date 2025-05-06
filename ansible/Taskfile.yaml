@@ -34,7 +34,7 @@ tasks:
     silent: true
 
   ping:
-    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows and Linux hosts."
+    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows, Linux, and macOS hosts."
     vars:
       INVENTORY: '{{.INVENTORY}}'
       HOSTS:     '{{.HOSTS | default "all"}}'
@@ -42,43 +42,53 @@ tasks:
       OS_TYPE:   '{{.OS_TYPE | default "auto"}}'
     cmds:
       - |
-        # Explicit OS_TYPE shortcuts
+        #— explicit OS_TYPE shortcuts
         if [ "{{.OS_TYPE}}" = "windows" ]; then
-          echo "Using win_ping module for all hosts (OS_TYPE=windows)"
+          echo "Using win_ping module for {{.HOSTS}} (OS_TYPE=windows)"
           {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
             ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
           exit $?
         elif [ "{{.OS_TYPE}}" = "linux" ]; then
-          echo "Using ping module for all hosts (OS_TYPE=linux)"
+          echo "Using ping module for {{.HOSTS}} (OS_TYPE=linux)"
           {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
             ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
           exit $?
         fi
 
-        # Auto-detect & ping once per host via an inline playbook
-        echo "Auto-detecting host types and pinging each host…"
+        #— auto-detect: build a tiny playbook and run it
+        echo "Auto-detecting host types and pinging each…"
 
-        PLAYBOOK_FILE=$(mktemp /tmp/ping_playbook.XXXXXX.yml)
-        cat > "$PLAYBOOK_FILE" <<'EOF'
+        # try Linux-style mktemp first; if it errors, fall back to macOS -t form
+        if PLAYBOOK=$(mktemp /tmp/ping_playbook.XXXXXX.yml 2>/dev/null); then
+          :
+        else
+          PLAYBOOK=$(mktemp -t ping_playbook).yml
+        fi
+
+        cat > "$PLAYBOOK" << 'EOF'
         ---
         - hosts: {{.HOSTS}}
           gather_facts: yes
           tasks:
-            - name: Ping Linux hosts
-              ping:
-              when: ansible_facts.os_family != 'Windows'
-
             - name: Ping Windows hosts
               win_ping:
               when: ansible_facts.os_family == 'Windows'
+
+            - name: Ping macOS hosts
+              ping:
+              when: ansible_facts['system'] == 'Darwin'
+
+            - name: Ping Linux hosts
+              ping:
+              when: ansible_facts['system'] == 'Linux'
         EOF
 
         echo "===== PING RESULTS ====="
         {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
-          ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK_FILE"
+          ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK"
         RET=$?
 
-        rm -f "$PLAYBOOK_FILE"
+        rm -f "$PLAYBOOK"
         exit $RET
     silent: false
 

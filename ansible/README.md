@@ -1,7 +1,8 @@
 # 🎭 Ansible Taskfile Tasks
 
 This directory contains reusable Taskfile tasks for Ansible development
-operations, including molecule testing, linting, and changelog management.
+operations, including molecule testing, linting, host reachability validation,
+and changelog management.
 
 ## 📋 Prerequisites
 
@@ -13,13 +14,13 @@ operations, including molecule testing, linting, and changelog management.
 - [jq](https://stedolan.github.io/jq/download/) installed (for JSON processing)
 - [antsibull-changelog](https://github.com/ansible-community/antsibull-changelog)
   installed
-- Docker installed (required for Molecule and act)
+- Docker installed (required for Molecule and `act`)
 
 ## 🎯 Available Tasks
 
 ### changelog-lint
 
-Lints the changelog using antsibull-changelog to ensure it follows the proper format.
+Lints the changelog using `antsibull-changelog` to ensure it follows the proper format.
 
 ```bash
 task changelog-lint
@@ -58,24 +59,115 @@ task: [ansible:changelog-lint] antsibull-changelog lint
 task: [ansible:changelog-release] antsibull-changelog release --version $NEXT_VERSION
 ```
 
-### lint-ansible
+### ping
 
-Runs Ansible Lint with custom configuration from `.hooks/linters/ansible-lint.yaml`.
+Performs a cross-platform ping using Ansible. This task supports:
+
+- Explicit OS detection using the `OS_TYPE` variable (`windows`, `linux`)
+- Automatic OS detection (default) using Ansible facts
+- Robust output display and smart fallback for `mktemp` compatibility on Linux/macOS
+- Windows, Linux, and macOS targets, including localhost
+
+**Optional Variables:**
+
+- `INVENTORY`: Path to your Ansible inventory file (required)
+- `HOSTS`: Target hosts or group (default: `all`)
+- `OS_TYPE`: Explicit OS type override (`windows`, `linux`, or `auto`)
+- `DEBUG`: Set to `true` for more verbose output
+
+#### 🔧 Usage Examples
 
 ```bash
-task lint-ansible
+# Auto-detect host types and ping all hosts
+task ping INVENTORY=mashup.ini
+
+# Explicitly ping only Windows hosts
+task ping INVENTORY=mashup.ini OS_TYPE=windows
+
+# Ping specific group with verbose output
+task ping INVENTORY=mashup.ini HOSTS=macos DEBUG=true
 ```
+
+#### 🛠 What It Does
+
+If `OS_TYPE` is set explicitly, it uses the appropriate Ansible module:
+
+```bash
+# Example shortcut output (windows)
+Using win_ping module for all (OS_TYPE=windows)
+ansible all -i "mashup.ini" -m win_ping
+```
+
+Otherwise, it builds a minimal playbook to auto-detect each host's OS using facts:
+
+```yaml
+- hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Ping Windows hosts
+      win_ping:
+      when: ansible_facts.os_family == 'Windows'
+
+    - name: Ping macOS hosts
+      ping:
+      when: ansible_facts['system'] == 'Darwin'
+
+    - name: Ping Linux hosts
+      ping:
+      when: ansible_facts['system'] == 'Linux'
+```
+
+#### ✅ Sample Output
+
+```bash
+Auto-detecting host types and pinging each…
+===== PING RESULTS =====
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] ********************************************************
+ok: [ashley-kali]
+ok: [vincent-kali]
+ok: [srv03]
+ok: [localhost]
+
+TASK [Ping Windows hosts] *****************************************************
+ok: [srv03]
+ok: [dc01]
+skipping: [vincent-kali]
+skipping: [localhost]
+
+TASK [Ping macOS hosts] *******************************************************
+ok: [localhost]
+skipping: [srv03]
+skipping: [dc01]
+
+TASK [Ping Linux hosts] *******************************************************
+ok: [vincent-kali]
+ok: [ashley-kali]
+skipping: [localhost]
+skipping: [srv03]
+
+PLAY RECAP ********************************************************************
+ashley-kali      : ok=2  changed=0  failed=0  skipped=2
+vincent-kali     : ok=2  changed=0  failed=0  skipped=2
+srv03            : ok=2  changed=0  failed=0  skipped=2
+localhost        : ok=2  changed=0  failed=0  skipped=2
+```
+
+#### 🧠 Notes
+
+- Uses `ANSIBLE_PYTHON_INTERPRETER=auto_silent` unless `DEBUG=true`
+- Works even with mixed environments (e.g., Windows DCs + Linux attackers +
+  local macOS)
+- Cleans up temporary playbooks after execution
+
+Let me know if you want a table view of variables or more output formatting examples.
 
 ### run-molecule-action
 
-Runs GitHub Actions molecule workflow locally using act. Supports testing
-specific components. This task expects a GitHub Actions workflow file at
-`.github/workflows/molecule.yaml`. See example workflow implementations:
-
-- [workstation-collection/molecule.yaml](https://github.com/CowDogMoo/ansible-collection-workstation/blob/main/.github/workflows/molecule.yaml)
-  - Example workflow for testing workstation configuration roles
-- [arsenal-collection/molecule.yaml](https://github.com/l50/ansible-collection-arsenal/blob/main/.github/workflows/molecule.yaml)
-  - Example workflow for testing security tooling roles
+Runs GitHub Actions Molecule workflow locally using `act`. Useful for testing
+roles and playbooks prior to pushing.
 
 **Optional Variables:**
 
@@ -86,16 +178,21 @@ specific components. This task expects a GitHub Actions workflow file at
 # Run all tests
 task run-molecule-action
 
-# Test specific role
-task run-molecule-action ROLE=asdf
+# Test a specific role
+task run-molecule-action ROLE=zsh_setup
 
-# Test specific playbook
+# Test a specific playbook
 task run-molecule-action PLAYBOOK=workstation
 ```
 
+See example workflows:
+
+- [workstation-collection/molecule.yaml](https://github.com/CowDogMoo/ansible-collection-workstation/blob/main/.github/workflows/molecule.yaml)
+- [arsenal-collection/molecule.yaml](https://github.com/l50/ansible-collection-arsenal/blob/main/.github/workflows/molecule.yaml)
+
 ### run-molecule-tests
 
-Executes Molecule tests for all roles in the collection sequentially.
+Runs Molecule tests for all roles in the collection sequentially and logs the output.
 
 ```bash
 task run-molecule-tests
@@ -104,10 +201,11 @@ task run-molecule-tests
 ## 🔍 Important Notes
 
 - All tasks include proper error handling and logging to `logs/molecule_tests.log`
-- Molecule tests use the project-specific `ansible.cfg` configuration
-- The `run-molecule-action` task automatically handles ARM64 architecture on macOS
-- Docker containers are automatically cleaned up between test runs
-- All changelog operations require proper version specification
+- Molecule tests rely on the local `ansible.cfg` configuration
+- `ping` task includes robust OS detection logic (Windows/macOS/Linux)
+- `run-molecule-action` supports macOS ARM64 compatibility automatically
+- Docker containers are cleaned up between test runs
+- Changelog generation requires explicit `NEXT_VERSION`
 
 ## 🔧 Importing Tasks
 
