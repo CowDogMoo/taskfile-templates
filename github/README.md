@@ -35,17 +35,26 @@ Required variables:
 - `REGEXP`: Pattern to match repository names
 - `TARGET_DIR`: Directory where submodules will be added
 
+### sync-submodules
+
+Initializes and updates submodules idempotently (safe to run multiple times).
+
+```bash
+task sync-submodules
+```
+
 ### remove-git-submodules
 
 Removes one or more git submodules and cleans up related files.
 
 ```bash
-task remove-git-submodules SUBMODULE_PATH=path/to/submodule
+task remove-git-submodules TARGET_DIR=modules REGEXP="^prefix-.*"
 ```
 
 Required variables:
 
-- `SUBMODULE_PATH`: Path to the submodule to remove
+- `TARGET_DIR`: Directory containing the submodules
+- `REGEXP`: Pattern to match submodule names to remove
 
 ### create-release
 
@@ -93,6 +102,14 @@ Required variables:
 - `BASE_BRANCH`: Branch to compare against
 - `EXCLUDES`: Comma-separated list of patterns to exclude
 
+### pull-git-repos
+
+Pulls updates for all git repositories in the current directory.
+
+```bash
+task pull-git-repos
+```
+
 ## 📝 Example Usage
 
 1. **Adding multiple submodules matching a pattern:**
@@ -101,19 +118,25 @@ Required variables:
 task add-git-submodules ORG=mycompany REGEXP="^api-.*" TARGET_DIR=apis
 ```
 
-2. **Creating a release with auto-generated notes:**
+1. **Synchronizing all submodules after cloning a repository:**
+
+```bash
+task sync-submodules
+```
+
+1. **Creating a release with auto-generated notes:**
 
 ```bash
 task create-release-with-notes NEXT_VERSION=1.2.0
 ```
 
-3. **Removing a submodule:**
+1. **Removing submodules matching a pattern:**
 
 ```bash
-task remove-git-submodules SUBMODULE_PATH=modules/api-service
+task remove-git-submodules TARGET_DIR=modules REGEXP="^api-.*"
 ```
 
-4. **Viewing changes excluding certain patterns:**
+1. **Viewing changes excluding certain patterns:**
 
 ```bash
 task diff-changes BASE_BRANCH=main EXCLUDES="test,docs/*,*.md"
@@ -159,3 +182,5 @@ tasks:
 - The `merge-pull-requests` task will only merge PRs that have passing checks
   and no conflicts
 - Release tasks expect a proper changelog structure in the repository
+- The `sync-submodules` task is idempotent and can be run multiple times without
+  issues
