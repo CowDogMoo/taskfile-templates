@@ -248,7 +248,6 @@ tasks:
 
   sync-submodules:
     desc: "Initialize and update submodules idempotently"
-    silent: true
     cmds:
       - |
         echo "Synchronizing all submodules..."
@@ -270,8 +269,29 @@ tasks:
         # Step 3: Fix any detached HEAD in submodules by checking out proper branch
         echo "Ensuring submodules are on the correct branch..."
         git submodule foreach '
-          # Get the branch the submodule is supposed to track
-          branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch || echo "main")
+          # Get the branch the submodule is supposed to track from .gitmodules
+          configured_branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch)
+
+          if [ -n "$configured_branch" ]; then
+            # Use the branch configured in .gitmodules if available
+            branch="$configured_branch"
+          else
+            # Intelligently determine default branch by checking which exists: main or master
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              branch="main"
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+              branch="master"
+            else
+              # Try to get the default branch from remote
+              remote_head=$(git remote show origin | grep "HEAD branch" | sed "s/.*: //")
+              if [ -n "$remote_head" ]; then
+                branch="$remote_head"
+              else
+                echo "[$name] Could not determine default branch, using main"
+                branch="main"
+              fi
+            fi
+          fi
 
           # Check if we are in detached HEAD state
           if git symbolic-ref -q HEAD >/dev/null; then
