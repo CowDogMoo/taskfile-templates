@@ -7,9 +7,6 @@ tasks:
     silent: true
     cmds:
       - |
-        # Automatically confirm remote Taskfile trust
-        export TASK_CONFIRM="y"
-
         # Create the target directory if it doesn't exist
         if [ -n "{{.TARGET_DIR}}" ]; then
           mkdir -p "{{.TARGET_DIR}}"
