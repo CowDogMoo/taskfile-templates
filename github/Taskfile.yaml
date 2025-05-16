@@ -271,7 +271,7 @@ tasks:
         echo "Ensuring submodules are on the correct branch..."
         git submodule foreach '
           # Get the branch the submodule is supposed to track
-          branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch || echo "master")
+          branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch || echo "main")
 
           # Check if we are in detached HEAD state
           if git symbolic-ref -q HEAD >/dev/null; then
