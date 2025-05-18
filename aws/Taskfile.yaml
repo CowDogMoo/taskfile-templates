@@ -339,6 +339,7 @@ tasks:
       - check-aws
       - check-jq
     vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
       DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
       KEYWORD: '{{.KEYWORD | default ""}}'
       REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
@@ -445,6 +446,49 @@ tasks:
         KEY_COUNT=$(echo "$KEYS" | wc -w | tr -d ' ')
         if [ -n "{{.KEYWORD}}" ]; then
           echo "Found $KEY_COUNT key(s) matching the keyword {{.KEYWORD}}"
+        fi
+
+        # Check if in DRY_RUN mode
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No keys will be disabled or scheduled for deletion."
+          echo "Would process the following $KEY_COUNT keys:"
+          for KEY_ID in $KEYS; do
+            KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+              handle_error $? "Failed to describe key $KEY_ID"
+              continue
+            }
+
+            DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState' 2>/dev/null)
+            if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
+              echo "- $KEY_ID (already pending deletion, would skip)"
+            else
+              PROCESS_KEY=false
+
+              if [ -n "{{.KEYWORD}}" ]; then
+                # If KEYWORD is provided, we've already filtered the keys
+                PROCESS_KEY=true
+              else
+                # If no KEYWORD, check if it has a Name tag
+                TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+                  handle_error $? "Failed to list tags for key $KEY_ID"
+                  continue
+                }
+
+                HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
+                if [ -z "$HAS_NAME_TAG" ]; then
+                  PROCESS_KEY=true
+                else
+                  echo "- $KEY_ID (has Name tag, would skip)"
+                fi
+              fi
+
+              if [ "$PROCESS_KEY" = true ]; then
+                echo "- $KEY_ID (would disable and schedule for deletion in {{.DAYS_TO_DELETION}} days)"
+              fi
+            fi
+          done
+          echo "DRY RUN COMPLETE - No changes were made."
+          exit 0
         fi
 
         for KEY_ID in $KEYS; do
