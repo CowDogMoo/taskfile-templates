@@ -1,167 +1,209 @@
 # 🌩️ AWS Taskfile Templates
 
-This directory contains reusable Taskfile templates for AWS operations,
-including listing EC2 instances, cleaning up KMS keys, managing EFS file
-systems, deleting S3 buckets, and cleaning up IAM resources.
+Reusable Taskfile configurations for AWS operations—manage EC2 instances, EFS
+file systems, KMS keys, S3 buckets, and IAM resources efficiently and safely.
+
+---
 
 ## 📋 Prerequisites
 
-- [AWS CLI](https://aws.amazon.com/cli/) installed and configured
-- [jq](https://stedolan.github.io/jq/) installed (for JSON processing)
-- Task installed (`brew install go-task/tap/go-task`)
+Before you start, ensure you have:
+
+- [AWS CLI](https://aws.amazon.com/cli/) installed and configured.
+- [jq](https://stedolan.github.io/jq/) installed (for managing JSON data).
+- [Task](https://taskfile.dev/) installed. Installation via Homebrew:
+
+  ```bash
+  brew install go-task/tap/go-task
+  ```
+
+---
 
 ## 🎯 Available Tasks
 
-### check-aws
+### ✅ check-aws
 
-Validates that AWS CLI is installed on your system.
+Check to confirm the AWS CLI is correctly installed.
 
 ```bash
 task check-aws
 ```
 
-### check-jq
+---
 
-Validates that jq is installed on your system.
+### ✅ check-jq
+
+Confirm the `jq` JSON processor is installed on your system.
 
 ```bash
 task check-jq
 ```
 
-### cleanup-bucket
+---
 
-Deletes S3 buckets that match a specified prefix pattern.
+### 🗑️ cleanup-bucket
 
-```bash
-task cleanup-bucket BUCKET_PREFIX=attack-box-bucket- REGION=us-west-1 DRY_RUN=true
-```
+Safely delete AWS S3 buckets matching a keyword.
 
-Optional variables:
-
-- `REGION`: AWS region where the buckets are located (defaults to 'us-west-1')
-- `BUCKET_PREFIX`: Prefix pattern to match bucket names (defaults to 'attack-box-bucket-')
-- `DRY_RUN`: When set to 'true', lists buckets without deleting them (defaults
-  to 'false')
-
-This task:
-
-1. Lists all S3 buckets matching the specified name prefix
-1. Empties each bucket's contents (required before deletion)
-1. Deletes the buckets
-1. Provides detailed progress and error reporting
-
-### cleanup-efs
-
-Deletes an EFS file system and its mount targets.
+**Example:**
 
 ```bash
-task cleanup-efs FILE_SYSTEM_ID=fs-1234567890abcdef0 REGION=us-east-2
+# Dry run to list buckets matching keyword without deleting
+task cleanup-bucket KEYWORD=test-bucket DRY_RUN=true REGION=us-east-1
+
+# Actually delete matching buckets
+task cleanup-bucket KEYWORD=test-bucket REGION=us-east-1
 ```
 
-Required variables:
+**Parameters:**
 
-- `FILE_SYSTEM_ID`: ID of the EFS file system to delete
+| Parameter | Required | Default                             | Description                        |
+| --------- | -------- | ----------------------------------- | ---------------------------------- |
+| `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview deletions |
+| `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword to match bucket names      |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region for bucket deletion     |
 
-Optional variables:
+**Process:**
 
-- `REGION`: AWS region where the EFS file system is located (defaults to 'us-east-2')
+- Lists and empties buckets matching keyword
+- Deletes buckets after emptying
+- Offers detailed logging and error reporting
 
-### cleanup-iam
+---
 
-Cleans up IAM resources (roles and policies) that match a specified keyword.
+### 🗑️ cleanup-efs
+
+Delete EFS file systems along with their mount targets.
+
+**Example:**
 
 ```bash
-task cleanup-iam KEYWORD=test-role DRY_RUN=true
+task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-west-2 DRY_RUN=true
 ```
 
-Required variables:
+**Parameters:**
 
-- `KEYWORD`: Keyword to match IAM resource names
+| Parameter        | Required | Default                             | Description                        |
+| ---------------- | -------- | ----------------------------------- | ---------------------------------- |
+| `DRY_RUN`        | ❌ No    | `false`                             | Set to `true` to preview deletions |
+| `FILE_SYSTEM_ID` | ✅ Yes   | None — must be specified            | EFS File System ID to delete       |
+| `REGION`         | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region for EFS deletion        |
 
-Optional variables:
+**Process:**
 
-- `REGION`: AWS region to use (defaults to `AWS_DEFAULT_REGION` environment
-  variable or 'us-east-2')
-- `DRY_RUN`: When set to 'true', lists resources without deleting them
-  (defaults to 'false')
+- Finds and removes mount targets before the EFS filesystem
+- Waits until all mount targets are fully deleted
+- Deletes the file system if no mount targets remain
 
-This task:
+---
 
-1. Searches for IAM roles and policies containing the specified keyword
-1. For roles: removes from instance profiles, detaches policies, deletes inline
-   policies, then deletes the role
-1. For policies: detaches from roles, then deletes the policy
-1. Provides comprehensive logging of all actions taken
+### 🛡️ cleanup-iam
 
-### cleanup-kms
+Clean IAM roles and policies matching a keyword safely.
 
-Finds and schedules deletion of unused KMS keys (those without Name tags).
+**Example:**
 
 ```bash
-task cleanup-kms REGION=us-east-2 DAYS_TO_DELETION=7
+task cleanup-iam KEYWORD=temp-policy DRY_RUN=true
 ```
 
-Optional variables:
+**Parameters:**
 
-- `REGION`: AWS region to query (defaults to 'us-east-2')
-- `DAYS_TO_DELETION`: Number of days before keys are permanently deleted
-  (defaults to '7')
+| Parameter | Required | Default                             | Description                                     |
+| --------- | -------- | ----------------------------------- | ----------------------------------------------- |
+| `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview action before deletion |
+| `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword matching IAM resource names             |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region to perform IAM operations            |
 
-### list-running-instances
+**Process:**
 
-Lists all running EC2 instances with detailed information.
+1. Identifies IAM resources (roles & policies) matching keyword.
+2. Detaches and removes dependencies, such as:
+   - Instance profiles from roles.
+   - Attached policies.
+   - Inline policies.
+3. Deletes IAM roles and policies securely.
+
+---
+
+### 🔑 cleanup-kms
+
+Identify and schedule deletion of unused KMS keys (keys without Name tags) or
+keys matching a keyword.
+
+**Example:**
 
 ```bash
-task list-running-instances REGION=us-east-2
+task cleanup-kms REGION=us-west-2 DAYS_TO_DELETION=10 DRY_RUN=true
 ```
 
-Optional variables:
+**Parameters:**
 
-- `REGION`: AWS region to query (defaults to `AWS_DEFAULT_REGION` environment
-  variable or 'us-east-2')
+| Parameter          | Required | Default                                       | Description                                  |
+| ------------------ | -------- | --------------------------------------------- | -------------------------------------------- |
+| `DAYS_TO_DELETION` | ❌ No    | `7`                                           | Waiting period before permanent key deletion |
+| `DRY_RUN`          | ❌ No    | `false`                                       | Set to `true` for a preview                  |
+| `KEYWORD`          | ❌ No    | None (Keys without Name tags chosen if blank) | Keyword to find specific KMS keys            |
+| `REGION`           | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2`           | AWS region for KMS operations                |
 
-## 📝 Example Usage
+**Process:**
 
-1. **Listing all running EC2 instances in a specific region:**
+- Searches and identifies unused keys or matches keyword keys
+- Disables keys securely before scheduling deletion
+- Provides detailed error handling and reports any permissions issues
 
-   ```bash
-   task list-running-instances REGION=us-west-2
-   ```
+---
 
-1. **Finding and scheduling deletion of unused KMS keys with a custom deletion window:**
+### 🖥️ list-running-instances
 
-   ```bash
-   task cleanup-kms REGION=us-east-1 DAYS_TO_DELETION=14
-   ```
+List detailed info about all currently running EC2 instances.
 
-1. **Deleting an EFS file system:**
+**Example:**
 
-   ```bash
-   task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-east-2
-   ```
+```bash
+task list-running-instances REGION=us-east-1
+```
 
-1. **Listing S3 buckets matching a pattern without deleting (dry run):**
+**Parameters:**
 
-   ```bash
-   task cleanup-bucket BUCKET_PREFIX=test-bucket- DRY_RUN=true
-   ```
+| Parameter | Required | Default                             | Description                               |
+| --------- | -------- | ----------------------------------- | ----------------------------------------- |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region to target for EC2 descriptions |
 
-1. **Identifying IAM resources to clean up without deleting (dry run):**
+**Output includes:**
 
-   ```bash
-   task cleanup-iam KEYWORD=temporary-access DRY_RUN=true
-   ```
+- Instance IDs
+- VPC IDs & Subnet IDs
+- Public IP & Private IP addresses
+- Instance Names based on "Name" tags
 
-1. **Cleaning up all IAM resources containing a specific keyword:**
+---
 
-   ```bash
-   task cleanup-iam KEYWORD=test-automation
-   ```
+## 📝 Example Usage Scenarios
 
-## 🔧 Extending Tasks
+- **Preview buckets deletion:**
 
-You can extend these tasks in your own Taskfile by importing this template and
-overriding or adding new tasks:
+  ```bash
+  task cleanup-bucket KEYWORD=dev-bucket DRY_RUN=true
+  ```
+
+- **Delete IAM related test resources:**
+
+  ```bash
+  task cleanup-iam KEYWORD=integration-tests
+  ```
+
+- **Schedule unused KMS keys for deletion after 2 weeks:**
+
+  ```bash
+  task cleanup-kms REGION=us-east-1 DAYS_TO_DELETION=14
+  ```
+
+---
+
+## ⚙️ Extending & Customizing Tasks
+
+Include and extend these tasks within your project's Taskfile:
 
 ```yaml
 version: "3"
@@ -172,37 +214,30 @@ includes:
     optional: true
 
 tasks:
-  # Override or extend existing tasks
-  list-running-instances-enhanced:
+  custom-instance-report:
     deps: [aws:list-running-instances]
     cmds:
-      - echo "Additional processing of instance data..."
+      - echo "Generating custom instance report..."
 
-  # Add new tasks that use the base tasks
-  cleanup-all:
+  cleanup-all-resources:
     cmds:
       - task: aws:cleanup-kms
         vars:
-          REGION: us-east-2
+          REGION: us-west-2
       - task: aws:cleanup-efs
         vars:
-          FILE_SYSTEM_ID: fs-0123456789abcdef
-          REGION: us-east-2
+          FILE_SYSTEM_ID: fs-123456789abcdef0
+          REGION: us-west-2
 ```
 
-## 🔍 Important Notes
+---
 
-- The AWS CLI must be properly configured (`aws configure`) before using these tasks
-- Appropriate IAM permissions are required for each task
-- The `cleanup-bucket` task will permanently delete matching buckets and their
-  contents
-- The `cleanup-efs` task will first delete all mount targets before deleting
-  the file system
-- The `cleanup-iam` task handles the complex dependencies between IAM resources
-  before deletion
-- The `cleanup-kms` task only targets keys without a Name tag
-- All tasks include appropriate error handling
-- Use caution with deletion tasks as they can permanently remove AWS resources
-- Consider using `AWS_PROFILE` environment variable to specify different AWS profiles
-- Always use `DRY_RUN=true` first with deletion tasks to verify which resources
-  will be affected
+## ⚠️ Important Notes & Precautions
+
+- Verify AWS CLI configuration via `aws configure` set with relevant permissions.
+- Dry run actions (`DRY_RUN=true`) are highly recommended before executing
+  destructive tasks.
+- Environment variable `AWS_PROFILE` can designate alternate AWS accounts/profiles.
+- Be cautious as tasks such as `cleanup-bucket`, `cleanup-efs`, `cleanup-kms`,
+  and `cleanup-iam` perform destructive operations capable of deleting data and
+  AWS resources permanently. Always review before proceeding.

@@ -339,8 +339,8 @@ tasks:
       - check-aws
       - check-jq
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
       DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
       KEYWORD: '{{.KEYWORD | default ""}}'
       REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
