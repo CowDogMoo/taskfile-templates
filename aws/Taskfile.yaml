@@ -680,6 +680,37 @@ tasks:
               continue
             }
 
+            # Get all aliases for this key
+            ALIASES=$(aws kms list-aliases --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+              exit_status=$?
+              handle_error $exit_status "Failed to list aliases for key $KEY_ID"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+            }
+
+            # Check if there are any aliases
+            ALIAS_COUNT=$(echo "$ALIASES" | jq '.Aliases | length')
+            if [ "$ALIAS_COUNT" -gt 0 ]; then
+              echo "Found $ALIAS_COUNT alias(es) for key $KEY_ID. Deleting..."
+
+              # Delete each alias
+              for ALIAS_NAME in $(echo "$ALIASES" | jq -r '.Aliases[].AliasName'); do
+                echo "Deleting alias: $ALIAS_NAME"
+                aws kms delete-alias --alias-name "$ALIAS_NAME" --region {{.REGION}} 2>/dev/null || {
+                  exit_status=$?
+                  handle_error $exit_status "Failed to delete alias $ALIAS_NAME"
+                  if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                    ((ERRORS++))
+                  fi
+                  continue
+                }
+                echo "Successfully deleted alias $ALIAS_NAME"
+              done
+            else
+              echo "No aliases found for key $KEY_ID"
+            fi
+
             echo "Successfully scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
           fi
           echo "----------------------------------------"
