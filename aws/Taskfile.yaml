@@ -28,9 +28,9 @@ tasks:
       - check-aws
       - check-jq
     vars:
-      REGION: '{{.REGION | default "us-west-1"}}'
-      KEYWORD: '{{.KEYWORD}}'
       DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
       - |
         # Check required parameters
@@ -96,8 +96,8 @@ tasks:
     deps:
       - check-aws
     vars:
-      REGION: '{{.REGION | default "us-east-2"}}'
       FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
       - |
         if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
@@ -146,9 +146,9 @@ tasks:
     deps:
       - check-aws
     vars:
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
-      KEYWORD: '{{.KEYWORD}}'
       DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
       - |
         # Check required parameters
@@ -316,13 +316,14 @@ tasks:
         echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
 
   cleanup-kms:
-    desc: "Find and schedule deletion of unused KMS keys (those without Name tags)"
+    desc: "Find and schedule deletion of unused KMS keys (those without Name tags) or keys matching a specified keyword"
     deps:
       - check-aws
       - check-jq
     vars:
-      REGION: '{{.REGION | default "us-east-2"}}'
       DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
+      KEYWORD: '{{.KEYWORD | default ""}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
       - |
         # Function to handle errors
@@ -339,15 +340,93 @@ tasks:
 
         ERRORS=0
 
-        echo "Finding KMS keys without Name tags..."
-        KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
-          handle_error $? "Failed to list KMS keys"
-          exit 1
-        }
+        if [ -z "{{.KEYWORD}}" ]; then
+          echo "No KEYWORD provided. Finding KMS keys without Name tags..."
+          KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+            handle_error $? "Failed to list KMS keys"
+            exit 1
+          }
+        else
+          echo "Finding KMS keys with keyword: {{.KEYWORD}} in region {{.REGION}}..."
+
+          # If keyword looks like an alias prefix, search aliases first - more efficient
+          if [[ "{{.KEYWORD}}" == *"-"* ]]; then
+            echo "Searching for keys with matching aliases..."
+            # Get aliases that match the keyword
+            ALIAS_KEYS=$(aws kms list-aliases --region {{.REGION}} | \
+              jq -r --arg kw "{{.KEYWORD}}" '.Aliases[] | select(.AliasName | contains($kw)) | .TargetKeyId' | sort -u) || {
+              handle_error $? "Failed to list key aliases"
+            }
+
+            if [ -n "$ALIAS_KEYS" ]; then
+              KEYS="$ALIAS_KEYS"
+              echo "Found keys with matching aliases."
+            else
+              echo "No keys found with matching aliases. Checking other key properties..."
+              KEYS=""
+            fi
+          else
+            KEYS=""
+          fi
+
+          # If no keys found by aliases or keyword doesn't look like an alias, check key IDs
+          if [ -z "$KEYS" ]; then
+            echo "Checking key IDs..."
+            # First get all keys
+            ALL_KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+              handle_error $? "Failed to list KMS keys"
+              exit 1
+            }
+
+            # Check if any key ID contains the keyword
+            for KEY_ID in $ALL_KEYS; do
+              if [[ "$KEY_ID" == *"{{.KEYWORD}}"* ]]; then
+                if [ -z "$KEYS" ]; then
+                  KEYS="$KEY_ID"
+                else
+                  KEYS="$KEYS $KEY_ID"
+                fi
+              fi
+            done
+
+            # If still no keys, check tags only if needed
+            if [ -z "$KEYS" ]; then
+              echo "Checking key tags..."
+              for KEY_ID in $ALL_KEYS; do
+                TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+                  handle_error $? "Failed to list tags for key $KEY_ID"
+                  continue
+                }
+
+                if echo "$TAGS" | jq -r '.Tags[] | "\(.TagKey):\(.TagValue)"' 2>/dev/null | grep -q "{{.KEYWORD}}"; then
+                  if [ -z "$KEYS" ]; then
+                    KEYS="$KEY_ID"
+                  else
+                    KEYS="$KEYS $KEY_ID"
+                  fi
+                fi
+              done
+            fi
+          fi
+
+          # Ensure unique keys and trim spaces
+          if [ -n "$KEYS" ]; then
+            KEYS=$(echo "$KEYS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+          fi
+        fi
 
         if [ -z "$KEYS" ]; then
-          echo "No keys found in region {{.REGION}}"
+          if [ -z "{{.KEYWORD}}" ]; then
+            echo "No keys found in region {{.REGION}}"
+          else
+            echo "No keys found matching keyword {{.KEYWORD}} in region {{.REGION}}"
+          fi
           exit 0
+        fi
+
+        KEY_COUNT=$(echo "$KEYS" | wc -w | tr -d ' ')
+        if [ -n "{{.KEYWORD}}" ]; then
+          echo "Found $KEY_COUNT key(s) matching the keyword {{.KEYWORD}}"
         fi
 
         for KEY_ID in $KEYS; do
@@ -372,27 +451,41 @@ tasks:
             continue
           fi
 
-          TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
-            handle_error $? "Failed to list tags for key $KEY_ID"
-            continue
-          }
+          PROCESS_KEY=false
 
-          HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
-          if [ $? -ne 0 ]; then
-            echo "Error processing tags for key $KEY_ID"
-            ((ERRORS++))
-            continue
+          if [ -n "{{.KEYWORD}}" ]; then
+            # If KEYWORD is provided, we've already filtered the keys
+            PROCESS_KEY=true
+          else
+            # If no KEYWORD, follow original logic (keys without Name tags)
+            TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+              handle_error $? "Failed to list tags for key $KEY_ID"
+              continue
+            }
+
+            HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
+            if [ $? -ne 0 ]; then
+              echo "Error processing tags for key $KEY_ID"
+              ((ERRORS++))
+              continue
+            fi
+
+            if [ -z "$HAS_NAME_TAG" ]; then
+              PROCESS_KEY=true
+            else
+              echo "Key $KEY_ID skipped (has Name tag)"
+            fi
           fi
 
-          CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
-          if [ -z "$CREATION_DATE" ]; then
-            echo "Error: Could not determine creation date for $KEY_ID"
-            ((ERRORS++))
-            continue
-          fi
-          echo "Creation date: $CREATION_DATE"
+          if [ "$PROCESS_KEY" = true ]; then
+            CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
+            if [ -z "$CREATION_DATE" ]; then
+              echo "Error: Could not determine creation date for $KEY_ID"
+              ((ERRORS++))
+              continue
+            fi
+            echo "Creation date: $CREATION_DATE"
 
-          if [ -z "$HAS_NAME_TAG" ]; then
             echo "Processing key for deletion: $KEY_ID"
 
             aws kms disable-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null || {
@@ -417,8 +510,6 @@ tasks:
             }
 
             echo "Successfully scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
-          else
-            echo "Key $KEY_ID skipped (has Name tag)"
           fi
           echo "----------------------------------------"
         done
