@@ -22,185 +22,6 @@ tasks:
         fi
     silent: true
 
-  list-running-instances:
-    desc: "List all running EC2 instances with details"
-    deps:
-      - check-aws
-    vars:
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
-    cmds:
-      - |
-        aws ec2 describe-instances \
-          --query "Reservations[*].Instances[*].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}" \
-          --filters Name=instance-state-name,Values=running \
-          --region {{.REGION}} \
-          --output json
-
-  cleanup-kms:
-    desc: "Find and schedule deletion of unused KMS keys (those without Name tags)"
-    deps:
-      - check-aws
-      - check-jq
-    vars:
-      REGION: '{{.REGION | default "us-east-2"}}'
-      DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
-    cmds:
-      - |
-        # Function to handle errors
-        handle_error() {
-          local exit_code=$1
-          local error_msg=$2
-          echo "Error: $error_msg"
-          if [ "$exit_code" -eq 254 ] || [ "$exit_code" -eq 255 ]; then
-            echo "Permission denied or authentication error. Skipping key..."
-            return 0
-          fi
-          return $exit_code
-        }
-
-        ERRORS=0
-
-        echo "Finding KMS keys without Name tags..."
-        KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
-          handle_error $? "Failed to list KMS keys"
-          exit 1
-        }
-
-        if [ -z "$KEYS" ]; then
-          echo "No keys found in region {{.REGION}}"
-          exit 0
-        fi
-
-        for KEY_ID in $KEYS; do
-          echo "Processing KEY_ID: $KEY_ID"
-          echo "----------------------------------------"
-
-          KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
-            handle_error $? "Failed to describe key $KEY_ID"
-            continue
-          }
-
-          DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState' 2>/dev/null)
-          if [ -z "$DELETION_STATUS" ]; then
-            echo "Error: Could not determine key status for $KEY_ID"
-            ((ERRORS++))
-            continue
-          fi
-          echo "Key status: $DELETION_STATUS"
-
-          if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
-            echo "Key $KEY_ID is already pending deletion. Skipping..."
-            continue
-          fi
-
-          TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
-            handle_error $? "Failed to list tags for key $KEY_ID"
-            continue
-          }
-
-          HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
-          if [ $? -ne 0 ]; then
-            echo "Error processing tags for key $KEY_ID"
-            ((ERRORS++))
-            continue
-          fi
-
-          CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
-          if [ -z "$CREATION_DATE" ]; then
-            echo "Error: Could not determine creation date for $KEY_ID"
-            ((ERRORS++))
-            continue
-          fi
-          echo "Creation date: $CREATION_DATE"
-
-          if [ -z "$HAS_NAME_TAG" ]; then
-            echo "Processing key for deletion: $KEY_ID"
-
-            aws kms disable-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null || {
-              exit_status=$?
-              handle_error $exit_status "Failed to disable key $KEY_ID"
-              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
-                ((ERRORS++))
-              fi
-              continue
-            }
-
-            aws kms schedule-key-deletion \
-              --key-id $KEY_ID \
-              --pending-window-in-days {{.DAYS_TO_DELETION}} \
-              --region {{.REGION}} 2>/dev/null || {
-              exit_status=$?
-              handle_error $exit_status "Failed to schedule key $KEY_ID for deletion"
-              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
-                ((ERRORS++))
-              fi
-              continue
-            }
-
-            echo "Successfully scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
-          else
-            echo "Key $KEY_ID skipped (has Name tag)"
-          fi
-          echo "----------------------------------------"
-        done
-
-        echo "Cleanup complete! Keys will be deleted after the waiting period."
-        if [ $ERRORS -gt 0 ]; then
-          echo "Warning: Encountered $ERRORS error(s) during processing"
-          exit 1
-        fi
-        exit 0
-
-  cleanup-efs:
-    desc: "Delete EFS file system and its mount targets"
-    deps:
-      - check-aws
-    vars:
-      REGION: '{{.REGION | default "us-east-2"}}'
-      FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
-    cmds:
-      - |
-        if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
-            echo "Error: FILE_SYSTEM_ID is required"
-            exit 1
-        fi
-
-        echo "Retrieving mount targets for file system: {{.FILE_SYSTEM_ID}}"
-        MOUNT_TARGET_IDS=$(aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets[].MountTargetId" --output text)
-
-        if [ -z "$MOUNT_TARGET_IDS" ]; then
-            echo "No mount targets found for file system: {{.FILE_SYSTEM_ID}}"
-        else
-            echo "Deleting mount targets..."
-            for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
-                echo "Deleting mount target: $MOUNT_TARGET_ID"
-                aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
-                if [ $? -eq 0 ]; then
-                    echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
-                else
-                    echo "Failed to delete mount target: $MOUNT_TARGET_ID"
-                    exit 1
-                fi
-            done
-        fi
-
-        echo "Waiting for all mount targets to be deleted..."
-        while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
-            sleep 5
-            echo "Still waiting for mount targets to be deleted..."
-        done
-        echo "All mount targets deleted."
-
-        echo "Deleting file system: {{.FILE_SYSTEM_ID}}"
-        aws efs delete-file-system --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}}
-
-        if [ $? -eq 0 ]; then
-            echo "File system {{.FILE_SYSTEM_ID}} successfully deleted."
-        else
-            echo "Failed to delete file system {{.FILE_SYSTEM_ID}}."
-            exit 1
-        fi
-
   cleanup-bucket:
     desc: "Delete S3 buckets matching a name pattern"
     deps:
@@ -262,6 +83,56 @@ tasks:
         else
           echo "Bucket cleanup completed successfully. All $BUCKET_COUNT buckets deleted."
           exit 0
+        fi
+
+  cleanup-efs:
+    desc: "Delete EFS file system and its mount targets"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default "us-east-2"}}'
+      FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
+    cmds:
+      - |
+        if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
+            echo "Error: FILE_SYSTEM_ID is required"
+            exit 1
+        fi
+
+        echo "Retrieving mount targets for file system: {{.FILE_SYSTEM_ID}}"
+        MOUNT_TARGET_IDS=$(aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets[].MountTargetId" --output text)
+
+        if [ -z "$MOUNT_TARGET_IDS" ]; then
+            echo "No mount targets found for file system: {{.FILE_SYSTEM_ID}}"
+        else
+            echo "Deleting mount targets..."
+            for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
+                echo "Deleting mount target: $MOUNT_TARGET_ID"
+                aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
+                if [ $? -eq 0 ]; then
+                    echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
+                else
+                    echo "Failed to delete mount target: $MOUNT_TARGET_ID"
+                    exit 1
+                fi
+            done
+        fi
+
+        echo "Waiting for all mount targets to be deleted..."
+        while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
+            sleep 5
+            echo "Still waiting for mount targets to be deleted..."
+        done
+        echo "All mount targets deleted."
+
+        echo "Deleting file system: {{.FILE_SYSTEM_ID}}"
+        aws efs delete-file-system --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}}
+
+        if [ $? -eq 0 ]; then
+            echo "File system {{.FILE_SYSTEM_ID}} successfully deleted."
+        else
+            echo "Failed to delete file system {{.FILE_SYSTEM_ID}}."
+            exit 1
         fi
 
   cleanup-iam:
@@ -437,3 +308,132 @@ tasks:
         rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
 
         echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
+
+  cleanup-kms:
+    desc: "Find and schedule deletion of unused KMS keys (those without Name tags)"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      REGION: '{{.REGION | default "us-east-2"}}'
+      DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
+    cmds:
+      - |
+        # Function to handle errors
+        handle_error() {
+          local exit_code=$1
+          local error_msg=$2
+          echo "Error: $error_msg"
+          if [ "$exit_code" -eq 254 ] || [ "$exit_code" -eq 255 ]; then
+            echo "Permission denied or authentication error. Skipping key..."
+            return 0
+          fi
+          return $exit_code
+        }
+
+        ERRORS=0
+
+        echo "Finding KMS keys without Name tags..."
+        KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+          handle_error $? "Failed to list KMS keys"
+          exit 1
+        }
+
+        if [ -z "$KEYS" ]; then
+          echo "No keys found in region {{.REGION}}"
+          exit 0
+        fi
+
+        for KEY_ID in $KEYS; do
+          echo "Processing KEY_ID: $KEY_ID"
+          echo "----------------------------------------"
+
+          KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+            handle_error $? "Failed to describe key $KEY_ID"
+            continue
+          }
+
+          DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState' 2>/dev/null)
+          if [ -z "$DELETION_STATUS" ]; then
+            echo "Error: Could not determine key status for $KEY_ID"
+            ((ERRORS++))
+            continue
+          fi
+          echo "Key status: $DELETION_STATUS"
+
+          if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
+            echo "Key $KEY_ID is already pending deletion. Skipping..."
+            continue
+          fi
+
+          TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+            handle_error $? "Failed to list tags for key $KEY_ID"
+            continue
+          }
+
+          HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
+          if [ $? -ne 0 ]; then
+            echo "Error processing tags for key $KEY_ID"
+            ((ERRORS++))
+            continue
+          fi
+
+          CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
+          if [ -z "$CREATION_DATE" ]; then
+            echo "Error: Could not determine creation date for $KEY_ID"
+            ((ERRORS++))
+            continue
+          fi
+          echo "Creation date: $CREATION_DATE"
+
+          if [ -z "$HAS_NAME_TAG" ]; then
+            echo "Processing key for deletion: $KEY_ID"
+
+            aws kms disable-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null || {
+              exit_status=$?
+              handle_error $exit_status "Failed to disable key $KEY_ID"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+              continue
+            }
+
+            aws kms schedule-key-deletion \
+              --key-id $KEY_ID \
+              --pending-window-in-days {{.DAYS_TO_DELETION}} \
+              --region {{.REGION}} 2>/dev/null || {
+              exit_status=$?
+              handle_error $exit_status "Failed to schedule key $KEY_ID for deletion"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+              continue
+            }
+
+            echo "Successfully scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
+          else
+            echo "Key $KEY_ID skipped (has Name tag)"
+          fi
+          echo "----------------------------------------"
+        done
+
+        echo "Cleanup complete! Keys will be deleted after the waiting period."
+        if [ $ERRORS -gt 0 ]; then
+          echo "Warning: Encountered $ERRORS error(s) during processing"
+          exit 1
+        fi
+        exit 0
+
+  list-running-instances:
+    desc: "List all running EC2 instances with details"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        aws ec2 describe-instances \
+          --query "Reservations[*].Instances[*].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}" \
+          --filters Name=instance-state-name,Values=running \
+          --region {{.REGION}} \
+          --output json
