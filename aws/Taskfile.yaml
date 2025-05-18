@@ -96,6 +96,7 @@ tasks:
     deps:
       - check-aws
     vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
       FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
       REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
     cmds:
@@ -105,31 +106,48 @@ tasks:
             exit 1
         fi
 
+        # Check DRY_RUN flag at the beginning
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+            echo "DRY RUN MODE - No changes will be made"
+            echo "Would process file system: {{.FILE_SYSTEM_ID}}"
+        fi
+
         echo "Retrieving mount targets for file system: {{.FILE_SYSTEM_ID}}"
         MOUNT_TARGET_IDS=$(aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets[].MountTargetId" --output text)
 
         if [ -z "$MOUNT_TARGET_IDS" ]; then
             echo "No mount targets found for file system: {{.FILE_SYSTEM_ID}}"
         else
-            echo "Deleting mount targets..."
-            for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
-                echo "Deleting mount target: $MOUNT_TARGET_ID"
-                aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
-                if [ $? -eq 0 ]; then
-                    echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
-                else
-                    echo "Failed to delete mount target: $MOUNT_TARGET_ID"
-                    exit 1
-                fi
-            done
+            echo "Found mount targets: $MOUNT_TARGET_IDS"
+
+            if [ "{{.DRY_RUN}}" = "true" ]; then
+                echo "Would delete these mount targets: $MOUNT_TARGET_IDS"
+            else
+                echo "Deleting mount targets..."
+                for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
+                    echo "Deleting mount target: $MOUNT_TARGET_ID"
+                    aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
+                    if [ $? -eq 0 ]; then
+                        echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
+                    else
+                        echo "Failed to delete mount target: $MOUNT_TARGET_ID"
+                        exit 1
+                    fi
+                done
+
+                echo "Waiting for all mount targets to be deleted..."
+                while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
+                    sleep 5
+                    echo "Still waiting for mount targets to be deleted..."
+                done
+                echo "All mount targets deleted."
+            fi
         fi
 
-        echo "Waiting for all mount targets to be deleted..."
-        while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
-            sleep 5
-            echo "Still waiting for mount targets to be deleted..."
-        done
-        echo "All mount targets deleted."
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+            echo "Would delete file system: {{.FILE_SYSTEM_ID}}"
+            exit 0
+        fi
 
         echo "Deleting file system: {{.FILE_SYSTEM_ID}}"
         aws efs delete-file-system --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}}
