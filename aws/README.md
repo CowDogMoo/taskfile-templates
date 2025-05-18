@@ -1,8 +1,8 @@
 # 🌩️ AWS Taskfile Templates
 
 This directory contains reusable Taskfile templates for AWS operations,
-including listing EC2 instances, cleaning up KMS keys, and managing EFS file
-systems.
+including listing EC2 instances, cleaning up KMS keys, managing EFS file
+systems, deleting S3 buckets, and cleaning up IAM resources.
 
 ## 📋 Prerequisites
 
@@ -93,19 +93,32 @@ This task:
 1. Deletes the buckets
 1. Provides detailed progress and error reporting
 
-Example usage:
+### cleanup-iam
+
+Cleans up IAM resources (roles and policies) that match a specified keyword.
 
 ```bash
-# List buckets matching a pattern without deleting (dry run)
-task cleanup-bucket BUCKET_PREFIX=test-bucket- DRY_RUN=true
-
-# Delete all buckets with the prefix "temp-data-" in us-east-1
-task cleanup-bucket BUCKET_PREFIX=temp-data- REGION=us-east-1
+task cleanup-iam KEYWORD=test-role DRY_RUN=true
 ```
 
-⚠️ **Warning**: This will permanently delete the matching buckets and all their
-contents. Use the `DRY_RUN=true` option first to verify which buckets will be
-affected.
+Required variables:
+
+- `KEYWORD`: Keyword to match IAM resource names
+
+Optional variables:
+
+- `REGION`: AWS region to use (defaults to `AWS_DEFAULT_REGION` environment
+  variable or 'us-east-2')
+- `DRY_RUN`: When set to 'true', lists resources without deleting them
+  (defaults to 'false')
+
+This task:
+
+1. Searches for IAM roles and policies containing the specified keyword
+1. For roles: removes from instance profiles, detaches policies, deletes inline
+   policies, then deletes the role
+1. For policies: detaches from roles, then deletes the policy
+1. Provides comprehensive logging of all actions taken
 
 ## 📝 Example Usage
 
@@ -125,6 +138,24 @@ affected.
 
    ```bash
    task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-east-2
+   ```
+
+1. **Listing S3 buckets matching a pattern without deleting (dry run):**
+
+   ```bash
+   task cleanup-bucket BUCKET_PREFIX=test-bucket- DRY_RUN=true
+   ```
+
+1. **Identifying IAM resources to clean up without deleting (dry run):**
+
+   ```bash
+   task cleanup-iam KEYWORD=temporary-access DRY_RUN=true
+   ```
+
+1. **Cleaning up all IAM resources containing a specific keyword:**
+
+   ```bash
+   task cleanup-iam KEYWORD=test-automation
    ```
 
 ## 🔧 Extending Tasks
@@ -166,6 +197,12 @@ tasks:
 - The `cleanup-kms` task only targets keys without a Name tag
 - The `cleanup-efs` task will first delete all mount targets before deleting
   the file system
+- The `cleanup-bucket` task will permanently delete matching buckets and their
+  contents
+- The `cleanup-iam` task handles the complex dependencies between IAM resources
+  before deletion
 - All tasks include appropriate error handling
 - Use caution with deletion tasks as they can permanently remove AWS resources
 - Consider using `AWS_PROFILE` environment variable to specify different AWS profiles
+- Always use `DRY_RUN=true` first with deletion tasks to verify which resources
+  will be affected

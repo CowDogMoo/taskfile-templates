@@ -36,7 +36,6 @@ tasks:
           --region {{.REGION}} \
           --output json
 
-
   cleanup-kms:
     desc: "Find and schedule deletion of unused KMS keys (those without Name tags)"
     deps:
@@ -264,3 +263,177 @@ tasks:
           echo "Bucket cleanup completed successfully. All $BUCKET_COUNT buckets deleted."
           exit 0
         fi
+
+  cleanup-iam:
+    desc: "Clean up IAM resources matching a specified keyword"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      KEYWORD: '{{.KEYWORD}}'
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding IAM resources with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        echo "DRY_RUN is set to: {{.DRY_RUN}}"
+
+        # Define the cleanup function
+        clean_up_iam_resources() {
+            while IFS= read -r line; do
+                # Skip empty lines
+                [ -z "$line" ] && continue
+
+                resource_arn=$(echo "$line" | awk '{print $2}')
+                # Skip if we can't extract a valid ARN
+                if [ -z "$resource_arn" ]; then
+                    echo "Warning: Could not extract ARN from line: $line"
+                    continue
+                fi
+
+                if [[ "$resource_arn" =~ ^arn:aws:iam::[0-9]+:policy/.+ ]]; then
+                    policy_arn=$resource_arn
+                    echo "Processing policy: $policy_arn"
+                    roles=$(aws iam list-entities-for-policy --policy-arn "$policy_arn" --query 'PolicyRoles[].RoleName' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$roles" ] && [ "$roles" != "None" ]; then
+                        for role in $roles; do
+                            echo "Detaching policy $policy_arn from $role"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to detach policy from $role"
+                            else
+                                echo "[DRY RUN] Would detach policy $policy_arn from $role"
+                            fi
+                        done
+                    else
+                        echo "No roles attached to policy $policy_arn"
+                    fi
+
+                    echo "Deleting policy: $policy_arn"
+                    if [ "{{.DRY_RUN}}" != "true" ]; then
+                        aws iam delete-policy --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to delete policy $policy_arn"
+                    else
+                        echo "[DRY RUN] Would delete policy: $policy_arn"
+                    fi
+                elif [[ "$resource_arn" =~ ^arn:aws:iam::[0-9]+:role/.+ ]]; then
+                    role_name=$(echo "$resource_arn" | awk -F'/' '{print $2}')
+                    echo "Processing role: $role_name"
+
+                    # Get instance profiles (if any)
+                    instance_profiles=$(aws iam list-instance-profiles-for-role --role-name "$role_name" --query 'InstanceProfiles[].InstanceProfileName' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$instance_profiles" ] && [ "$instance_profiles" != "None" ]; then
+                        for profile in $instance_profiles; do
+                            echo "Removing role $role_name from instance profile $profile"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam remove-role-from-instance-profile --instance-profile-name "$profile" --role-name "$role_name" 2>/dev/null || echo "Failed to remove role from profile $profile"
+                            else
+                                echo "[DRY RUN] Would remove role $role_name from instance profile $profile"
+                            fi
+                        done
+                    else
+                        echo "No instance profiles for role $role_name"
+                    fi
+
+                    # Get attached policies
+                    policies=$(aws iam list-attached-role-policies --role-name "$role_name" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$policies" ] && [ "$policies" != "None" ]; then
+                        for policy_arn in $policies; do
+                            echo "Detaching policy $policy_arn from $role_name"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam detach-role-policy --role-name "$role_name" --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to detach policy $policy_arn from role"
+                            else
+                                echo "[DRY RUN] Would detach policy $policy_arn from $role_name"
+                            fi
+                        done
+                    else
+                        echo "No attached policies for role $role_name"
+                    fi
+
+                    # Get inline policies
+                    inline_policies=$(aws iam list-role-policies --role-name "$role_name" --query 'PolicyNames[]' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$inline_policies" ] && [ "$inline_policies" != "None" ]; then
+                        for policy_name in $inline_policies; do
+                            echo "Deleting inline policy $policy_name from $role_name"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam delete-role-policy --role-name "$role_name" --policy-name "$policy_name" 2>/dev/null || echo "Failed to delete inline policy $policy_name"
+                            else
+                                echo "[DRY RUN] Would delete inline policy $policy_name from $role_name"
+                            fi
+                        done
+                    else
+                        echo "No inline policies for role $role_name"
+                    fi
+
+                    # Delete the role
+                    echo "Attempting to delete role: $role_name"
+                    if [ "{{.DRY_RUN}}" != "true" ]; then
+                        if aws iam delete-role --role-name "$role_name" 2>/dev/null; then
+                            echo "Successfully deleted role: $role_name"
+                        else
+                            echo "Failed to delete role: $role_name. Check for any remaining dependencies."
+                        fi
+                    else
+                        echo "[DRY RUN] Would attempt to delete role: $role_name"
+                    fi
+                else
+                    echo "Invalid or unrecognized resource ARN: $resource_arn"
+                fi
+            done
+        }
+
+        # Find IAM resources with the keyword - with better error handling
+        echo "Searching for IAM resources with '{{.KEYWORD}}' in the name..."
+        set +e  # Don't exit on error
+
+        # Use a temporary file to store results
+        TEMP_ROLES=$(mktemp)
+        TEMP_POLICIES=$(mktemp)
+
+        # Get roles that match the keyword
+        aws iam list-roles --query "Roles[].[RoleName, Arn]" --output text 2>/dev/null | grep -i "{{.KEYWORD}}" > "$TEMP_ROLES" || true
+
+        # Get policies that match the keyword
+        aws iam list-policies --query "Policies[].[PolicyName, Arn]" --output text 2>/dev/null | grep -i "{{.KEYWORD}}" > "$TEMP_POLICIES" || true
+
+        # Count resources found
+        ROLE_COUNT=$(wc -l < "$TEMP_ROLES" | tr -d ' ')
+        POLICY_COUNT=$(wc -l < "$TEMP_POLICIES" | tr -d ' ')
+        TOTAL_COUNT=$((ROLE_COUNT + POLICY_COUNT))
+
+        if [ $TOTAL_COUNT -eq 0 ]; then
+          echo "No IAM resources found matching keyword '{{.KEYWORD}}'"
+          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+          exit 0
+        fi
+
+        echo "Found $ROLE_COUNT roles and $POLICY_COUNT policies matching the keyword '{{.KEYWORD}}'"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No resources will be deleted. Matching resources:"
+          echo "ROLES:"
+          cat "$TEMP_ROLES"
+          echo "POLICIES:"
+          cat "$TEMP_POLICIES"
+          echo "To perform actual deletion, run with DRY_RUN=false"
+          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+          exit 0
+        fi
+
+        echo "Proceeding with IAM resource cleanup..."
+
+        # Clean up roles and policies
+        cat "$TEMP_ROLES" | clean_up_iam_resources
+        cat "$TEMP_POLICIES" | clean_up_iam_resources
+
+        # Clean up temporary files
+        rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+
+        echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
