@@ -91,6 +91,115 @@ tasks:
           exit 0
         fi
 
+  cleanup-dynamodb:
+    desc: "Delete DynamoDB tables matching a specified keyword"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding DynamoDB tables with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        TABLES=$(aws dynamodb list-tables --region {{.REGION}} | jq -r '.TableNames[] | select(. | contains("{{.KEYWORD}}"))') || {
+          echo "Error: Failed to list DynamoDB tables"
+          exit 1
+        }
+
+        if [ -z "$TABLES" ]; then
+          echo "No DynamoDB tables found matching keyword {{.KEYWORD}}"
+          exit 0
+        fi
+
+        TABLE_COUNT=$(echo "$TABLES" | wc -l | tr -d ' ')
+        echo "Found $TABLE_COUNT table(s) matching the keyword {{.KEYWORD}}"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No tables will be deleted. Matching tables:"
+          echo "$TABLES"
+          exit 0
+        fi
+
+        echo "Proceeding with table deletion..."
+        ERRORS=0
+
+        for TABLE in $TABLES; do
+          echo "----------------------------------------"
+          echo "Processing table: $TABLE"
+
+          # Get table info to check for any backups that need to be cleaned up
+          echo "Checking for table backups..."
+          BACKUPS=$(aws dynamodb list-backups --table-name "$TABLE" --region {{.REGION}} | jq -r '.BackupSummaries[].BackupArn' 2>/dev/null) || {
+            echo "Warning: Failed to list backups for table $TABLE, continuing with deletion"
+          }
+
+          if [ -n "$BACKUPS" ]; then
+            echo "Found backups for table $TABLE, deleting them first..."
+            for BACKUP_ARN in $BACKUPS; do
+              echo "Deleting backup: $BACKUP_ARN"
+              aws dynamodb delete-backup --backup-arn "$BACKUP_ARN" --region {{.REGION}} || {
+                echo "Error: Failed to delete backup $BACKUP_ARN"
+                ((ERRORS++))
+              }
+            done
+          else
+            echo "No backups found for table $TABLE"
+          fi
+
+          # Delete the table
+          echo "Deleting table..."
+          aws dynamodb delete-table --table-name "$TABLE" --region {{.REGION}} || {
+            echo "Error: Failed to delete table $TABLE"
+            ((ERRORS++))
+            continue
+          }
+
+          echo "Successfully issued delete command for table: $TABLE"
+          echo "Waiting for table deletion to complete..."
+
+          # Wait for table to be deleted (with timeout to prevent endless waiting)
+          TIMEOUT=300  # 5 minutes timeout
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+
+            if [ $ELAPSED -gt $TIMEOUT ]; then
+              echo "Timeout reached while waiting for table $TABLE to be deleted"
+              break
+            fi
+
+            # Check if table still exists
+            TABLE_EXISTS=$(aws dynamodb describe-table --table-name "$TABLE" --region {{.REGION}} 2>&1 || echo "NOT_FOUND")
+
+            if [[ "$TABLE_EXISTS" == *"ResourceNotFoundException"* ]] || [[ "$TABLE_EXISTS" == "NOT_FOUND" ]]; then
+              echo "Table $TABLE has been deleted successfully"
+              break
+            else
+              echo "Still waiting for table $TABLE to be deleted... ($ELAPSED seconds elapsed)"
+              sleep 10
+            fi
+          done
+
+          echo "----------------------------------------"
+        done
+
+        if [ $ERRORS -gt 0 ]; then
+          echo "DynamoDB cleanup completed with $ERRORS error(s)"
+          exit 1
+        else
+          echo "DynamoDB cleanup completed successfully. All $TABLE_COUNT tables deleted."
+          exit 0
+        fi
+
   cleanup-efs:
     desc: "Delete EFS file system and its mount targets"
     deps:

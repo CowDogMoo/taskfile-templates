@@ -71,6 +71,38 @@ task cleanup-bucket KEYWORD=test-bucket REGION=us-east-1
 
 ---
 
+### 🗄️ cleanup-dynamodb
+
+Delete AWS DynamoDB tables matching a specified keyword safely.
+
+**Example:**
+
+```bash
+# Dry run to preview matching tables without deleting
+task cleanup-dynamodb KEYWORD=test-table DRY_RUN=true REGION=us-east-1
+
+# Delete matching DynamoDB tables
+task cleanup-dynamodb KEYWORD=test-table REGION=us-east-1
+```
+
+**Parameters:**
+
+| Parameter | Required | Default                             | Description                                                |
+| --------- | -------- | ----------------------------------- | ---------------------------------------------------------- |
+| `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview deletions without performing them |
+| `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword to identify DynamoDB tables to delete              |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region where the tables are located                    |
+
+**Process:**
+
+1. Searches for DynamoDB tables matching the provided keyword.
+1. Lists any backups associated with matching tables, deleting them first to
+   ensure safe removal.
+1. Issues table deletion commands and waits until deletions are complete.
+1. Provides detailed progress logging and robust error handling.
+
+---
+
 ### 🗑️ cleanup-efs
 
 Delete EFS file systems along with their mount targets.
@@ -118,11 +150,11 @@ task cleanup-iam KEYWORD=temp-policy DRY_RUN=true
 **Process:**
 
 1. Identifies IAM resources (roles & policies) matching keyword.
-2. Detaches and removes dependencies, such as:
+1. Detaches and removes dependencies, such as:
    - Instance profiles from roles.
    - Attached policies.
    - Inline policies.
-3. Deletes IAM roles and policies securely.
+1. Deletes IAM roles and policies securely.
 
 ---
 
