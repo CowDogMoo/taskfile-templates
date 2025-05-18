@@ -23,26 +23,32 @@ tasks:
     silent: true
 
   cleanup-bucket:
-    desc: "Delete S3 buckets matching a name pattern"
+    desc: "Delete S3 buckets matching a specified keyword"
     deps:
       - check-aws
       - check-jq
     vars:
       REGION: '{{.REGION | default "us-west-1"}}'
-      BUCKET_PREFIX: '{{.BUCKET_PREFIX | default "attack-box-bucket-"}}'
+      KEYWORD: '{{.KEYWORD}}'
       DRY_RUN: '{{.DRY_RUN | default "false"}}'
     cmds:
       - |
-        echo "Finding S3 buckets with prefix: {{.BUCKET_PREFIX}} in region {{.REGION}}"
-        BUCKETS=$(aws s3api list-buckets | jq -r '.Buckets[] | select(.Name | startswith("{{.BUCKET_PREFIX}}")) | .Name')
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding S3 buckets with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        BUCKETS=$(aws s3api list-buckets | jq -r '.Buckets[] | select(.Name | contains("{{.KEYWORD}}")) | .Name')
 
         if [ -z "$BUCKETS" ]; then
-          echo "No buckets found matching prefix {{.BUCKET_PREFIX}}"
+          echo "No buckets found matching keyword {{.KEYWORD}}"
           exit 0
         fi
 
         BUCKET_COUNT=$(echo "$BUCKETS" | wc -l | tr -d ' ')
-        echo "Found $BUCKET_COUNT bucket(s) matching the prefix {{.BUCKET_PREFIX}}"
+        echo "Found $BUCKET_COUNT bucket(s) matching the keyword {{.KEYWORD}}"
 
         if [ "{{.DRY_RUN}}" = "true" ]; then
           echo "DRY RUN MODE - No buckets will be deleted. Matching buckets:"
