@@ -1,22 +1,25 @@
 # 🌍 Terraform Taskfile Templates
 
-This directory contains reusable Taskfile templates for Terraform and
-Terragrunt operations, including infrastructure deployment, testing, and
-maintenance tasks.
+This directory contains reusable Taskfile templates for **Terraform** and
+**Terragrunt** operations, supporting infrastructure deployment, linting,
+testing, and state management.
 
 ## 📋 Prerequisites
 
 - [Terraform](https://www.terraform.io/downloads.html) installed
 - [Terragrunt](https://terragrunt.gruntwork.io) installed
-- [Go](https://go.dev/dl/) installed (for Terratest)
-- [Terratest](https://terratest.gruntwork.io) installed
-- Task installed (`brew install go-task/tap/go-task`)
+- [Go](https://go.dev/dl/) (for running Terratest)
+- [Terratest](https://terratest.gruntwork.io) in your `test` Go module
+- [Task](https://taskfile.dev/#/installation)
+  (`brew install go-task/tap/go-task`) installed
+
+---
 
 ## 🎯 Available Tasks
 
 ### check-terraform
 
-Validates that Terraform is installed on your system.
+Checks if Terraform is installed on your system.
 
 ```bash
 task check-terraform
@@ -24,33 +27,64 @@ task check-terraform
 
 ### check-terragrunt
 
-Validates that Terragrunt is installed on your system.
+Checks if Terragrunt is installed on your system.
 
 ```bash
 task check-terragrunt
 ```
 
+### lint
+
+Runs `terraform fmt -check -recursive` and `tflint` for all `.tf` files, in all directories.
+
+```bash
+task lint
+```
+
+### format
+
+Applies `terraform fmt -recursive` to format code in place.
+
+```bash
+task format
+```
+
+### validate
+
+Runs `terraform validate` in the current directory to check syntax and config correctness.
+
+```bash
+task validate
+```
+
 ### terragrunt-init
 
-Initializes Terraform configurations using Terragrunt. Can be used for specific
-modules or all modules.
+Initializes one or all Terragrunt modules.
+Required: `DEPLOYMENT`, `ENV`, `REGION`
+Optional: `MODULE`
+
+**All modules**:
 
 ```bash
 task terragrunt-init DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
+**Specific module**:
+
+```bash
+task terragrunt-init DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
+```
+
 ### terragrunt-plan
 
-Shows the execution plan for Terraform configurations using Terragrunt. Can be
-used for specific modules or all modules.
-
-**Plan all modules:**
+Runs `terragrunt plan` (`run-all plan`) for all or a specific module.
+**All modules**:
 
 ```bash
 task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
-**Plan specific module:**
+**Specific module**:
 
 ```bash
 task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
@@ -58,212 +92,157 @@ task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
 
 ### terragrunt-apply
 
-Applies Terraform configurations using Terragrunt. Can be used for specific
-modules or all modules.
+Runs `terragrunt apply` (`run-all apply`) for all or a specific module.
+All apply and destroy operations are non-interactive (`-auto-approve`).
 
-**Apply all modules:**
+**All modules**:
 
 ```bash
-task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
-**Apply specific module:**
+**Specific module**:
 
 ```bash
-task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
 ```
 
 ### terragrunt-destroy
 
-Destroys Terraform infrastructure using Terragrunt. Can target specific modules
-or all modules.
+Runs `terragrunt destroy` (`run-all destroy`) for all or a specific module.
 
-**Destroy all modules:**
+**All modules**:
 
 ```bash
-task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
+task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
-**Destroy specific module:**
+**Specific module**:
 
 ```bash
-task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
+task terragrunt-destroy DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
 ```
 
 ### terragrunt-state-remove-all
 
-Removes all resources from the Terraform state using Terragrunt.
-Can target specific modules or all modules.
+Removes all resources from the Terraform state for a specified module or all
+modules.
+Required: `DEPLOYMENT`, `ENV`, `REGION`
+Optional: `MODULE`
 
-**Remove state for all modules:**
+**Entire deployment**:
 
 ```bash
-task terragrunt-state-remove-all \
-  DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+task terragrunt-state-remove-all DEPLOYMENT=myenv ENV=dev REGION=us-east-2
 ```
 
-**Remove state for specific module:**
+**Specific module only**:
 
 ```bash
-task terragrunt-state-remove-all \
-  DEPLOYMENT=myenv ENV=dev REGION=us-east-2 \
-  MODULE=mymodule
+task terragrunt-state-remove-all DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
 ```
 
 ### run-terratest
 
-Runs Terratest infrastructure tests. The `run-terratest` task supports the
-following variables with defaults:
+Runs Terratest integration tests in the `test/` directory.
 
-- `TIMEOUT`: Default is `60m`
-- `DESTROY`: Default is `true`
-- `VERBOSE`: Default is `false`
-- `LOG_TO_FILE`: Default is `false`
-- `LOG_PATH`: Default is `/tmp/terratest.log`
+#### Supported options (all optional)
 
-When `VERBOSE` is set to `true`, it will:
+- `TIMEOUT`: Max duration (default: `60m`)
+- `DESTROY`: Destroy infra after test (default: `true`)
+- `VERBOSE`: Show verbose logs (default: `false`)
+- `LOG_TO_FILE`: Tee logs to a file (default: `false`)
+- `LOG_PATH`: Log output file path (default: `/tmp/terratest.log`)
 
-- Enable Terraform debug logging (`TF_LOG=DEBUG`)
-- Run tests with verbose Go testing flags
-
-When `LOG_TO_FILE` is set to `true`, it will:
-
-- Save Terraform logs to `./terraform.log` (if `VERBOSE` is also `true`)
-- Save test output to the specified `LOG_PATH`
-
-**Basic usage:**
+**Simple usage:**
 
 ```bash
 task run-terratest
 ```
 
-**With custom options:**
+**Advanced usage:**
 
 ```bash
-task run-terratest TIMEOUT=30m DESTROY=false VERBOSE=true LOG_TO_FILE=true
+task run-terratest TIMEOUT=30m DESTROY=false VERBOSE=true LOG_TO_FILE=true LOG_PATH=output.log
 ```
 
-### validate
-
-Runs `terraform validate` to ensure configurations are syntactically correct.
-
-```bash
-task validate
-```
-
-### format
-
-Formats Terraform code using `terraform fmt -recursive`.
-
-```bash
-task format
-```
-
-### lint
-
-Runs `terraform fmt` check and `tflint` on all Terraform files.
-
-```bash
-task lint
-```
-
-### changelog-init
-
-Initializes a changelog for Terraform modules.
-
-```bash
-task changelog-init
-```
-
-### changelog-release
-
-Updates changelog for release.
-
-```bash
-task changelog-release NEXT_VERSION=1.0.0
-```
-
-### release
-
-Prepares and validates a Terraform release.
-
-```bash
-task release NEXT_VERSION=1.0.0
-```
+---
 
 ## 📝 Example Usage
 
-1. **Running Terratest without destroying infrastructure:**
+**Format and validate code:**
 
-   ```bash
-   task run-terratest DESTROY=false
-   ```
+```bash
+task format
+task validate
+```
 
-1. **Running Terratest with verbose output and logging to disk:**
+**Plan and apply infrastructure:**
 
-   ```bash
-   task run-terratest DESTROY=false VERBOSE=true LOG_TO_FILE=true LOG_PATH=/tmp/output.log
-   ```
+```bash
+task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+```
 
-1. **Applying infrastructure changes:**
+**Apply for a single module:**
 
-   ```bash
-   # Plan changes for all modules
-   task terragrunt-plan DEPLOYMENT=myenv ENV=dev REGION=us-east-2
+```bash
+task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
+```
 
-   # Apply all modules
-   task terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 -y
+**Remove state for a module:**
 
-   # Apply specific module with verbose output
-   task --verbose terragrunt-apply DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule -y
-   ```
+```bash
+task terragrunt-state-remove-all DEPLOYMENT=myenv ENV=dev REGION=us-east-2 MODULE=mymodule
+```
 
-1. **Format and validate Terraform code:**
+**Terratest, verbose with logs:**
 
-   ```bash
-   task format
-   task validate
-   ```
+```bash
+task run-terratest VERBOSE=true LOG_TO_FILE=true LOG_PATH=/tmp/test.log
+```
 
-## 🔧 Extending Tasks
+---
 
-You can extend these tasks in your own Taskfile by importing this template and
-overriding or adding new tasks. Here's an example:
+## ⚙️ Extending Tasks
+
+You can import this template in your own Taskfile and add or extend tasks as desired:
 
 ```yaml
-version: "3"
-
 includes:
   tf:
     taskfile: ./terraform.yml
-    optional: true
 
 tasks:
-  # Override or extend existing tasks
-  terragrunt-apply:
-    deps: [tf:terragrunt-apply]
+  my-custom-task:
     cmds:
-      - echo "Additional steps after terraform apply..."
-
-  # Add new tasks that use the base tasks
-  deploy-all:
-    cmds:
-      - task: tf:terragrunt-apply
+      - task: tf:terragrunt-plan
         vars:
           DEPLOYMENT: myenv
           ENV: dev
-          REGION: us-east-2
+          REGION: us-west-1
 ```
 
-## 🔍 Important Notes
+---
 
-- The terragrunt tasks require the following environment variables:
-  - `DEPLOYMENT`: The name of your deployment
-  - `ENV`: The environment (e.g., dev, prod)
-  - `REGION`: The AWS region
-- The `MODULE` variable is optional and allows targeting specific modules
-- All tasks that modify infrastructure (apply/destroy) use `-auto-approve` and
-  `-lock=false` flags by default
-- Use the `-y` flag to automatically approve task execution
-- Add `--verbose` flag for detailed task execution output
-- Terratest requires a `test` directory with Go files and proper module initialization
+## 🔍 Notes
+
+- `DEPLOYMENT`, `ENV`, and `REGION` are required for all Terragrunt tasks.
+- `MODULE` is optional, to target a specific submodule directory.
+- Terragrunt commands default to non-interactive, auto-approved, and disable
+  state file locking.
+- Terratest assumes your tests are in a `test` subdirectory.
+- `tflint` must be installed to use the `lint` task.
+
+## 🤝 Contributing
+
+1. Fork the repository
+1. Create a new branch for your changes
+1. Ensure tests pass: `task run-molecule-tests`
+1. Lint changes: `task lint-ansible`
+1. Update changelog: `task gen-changelog NEXT_VERSION=x.y.z`
+1. Submit as a PR
+
+## 📜 License
+
+MIT License. See [LICENSE](LICENSE) file for details.

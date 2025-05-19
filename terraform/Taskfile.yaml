@@ -36,45 +36,6 @@ tasks:
         done
     silent: true
 
-  changelog-init:
-    desc: "Initialize changelog for terraform modules"
-    cmds:
-      - |
-        if [ ! -f CHANGELOG.md ]; then
-          echo "# Changelog" > CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          echo "## [Unreleased]" >> CHANGELOG.md
-        fi
-    silent: true
-
-  changelog-release:
-    desc: "Update changelog for release"
-    vars:
-      NEXT_VERSION:
-        sh: if [ -z "$NEXT_VERSION" ]; then echo "Please set NEXT_VERSION"; exit 1; else echo "$NEXT_VERSION"; fi
-    cmds:
-      - task: changelog-init
-      - |
-        DATE=$(date +%Y-%m-%d)
-        sed -i.bak "s/## \[Unreleased\]/## [Unreleased]\n\n## [$NEXT_VERSION] - ${DATE}/" CHANGELOG.md
-        rm CHANGELOG.md.bak
-
-  release:
-    desc: "Prepare and validate terraform release"
-    deps:
-      - check-terraform
-      - lint
-    vars:
-      NEXT_VERSION:
-        sh: if [ -z "$NEXT_VERSION" ]; then echo "Please set NEXT_VERSION"; exit 1; else echo "$NEXT_VERSION"; fi
-    cmds:
-      - task: changelog-release
-      - task: validate
-      - |
-        echo "Creating release tag v${NEXT_VERSION}"
-        git tag -a "v${NEXT_VERSION}" -m "Release version ${NEXT_VERSION}"
-        echo "To push the release, run: git push origin v${NEXT_VERSION}"
-
   _terragrunt-base:
     internal: true
     deps:
@@ -90,7 +51,7 @@ tasks:
       REGION: '{{.REGION | default ""}}'
     cmds:
       - |
-        set -eo pipefail
+        set -euo pipefail
 
         # Check for required COMMAND variable
         if [ -z "{{.COMMAND}}" ]; then
