@@ -20,14 +20,16 @@ tasks:
     deps:
       - check-repository-format
       - task: docker:check-docker
+    vars:
+      BRANCH: '{{.BRANCH | default "main"}}'
+      GITHUB_TOKEN: '{{.GITHUB_TOKEN}}'
+      REPOSITORY: '{{.REPOSITORY}}'
+    requires:
+      vars:
+        - GITHUB_TOKEN
+        - REPOSITORY
     cmds:
       - |
-        # Ensure required environment variables are set
-        if [ -z "$GITHUB_TOKEN" ]; then
-          echo "GITHUB_TOKEN environment variable is required"
-          exit 1
-        fi
-
         # Define base directory explicitly
         BASE_DIR="${PWD}"
         echo "Base directory: $BASE_DIR"
@@ -54,9 +56,12 @@ tasks:
         mkdir -p "$TEMP_GIT_DIR"
         cd "$TEMP_GIT_DIR"
 
-        # Clone the target repository
-        echo "Cloning {{.REPOSITORY}} into temporary directory..."
-        git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" .
+        # Clone the target repository with the specified branch
+        echo "Cloning {{.REPOSITORY}} (branch: $BRANCH) into temporary directory..."
+        git clone --depth=1 --branch "$BRANCH" "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" . || {
+          echo "Error: Branch '$BRANCH' not found. Falling back to default branch."
+          git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" .
+        }
 
         # Initialize submodules if needed
         if [ "{{.INIT_SUBMODULES | default "true"}}" = "true" ] && [ -f ".gitmodules" ]; then
@@ -64,11 +69,21 @@ tasks:
           git submodule update --init --recursive
         fi
 
-        # Copy your renovate config to the temporary repo
         CONFIG_PATH="$BASE_DIR/{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
+        echo ""
+        echo "IMPORTANT: To test your local Renovate configuration changes, you must:"
+        echo "  1. Push your configuration to the remote branch '$BRANCH' in {{.REPOSITORY}}"
+        echo "  2. OR specify a different branch using the BRANCH parameter where your config changes exist"
+        echo ""
+        echo "Without pushing your changes, this will test the configuration already present in the repository."
+        echo ""
+
+        # Copy renovate config to the temporary repo
         if [ -f "$CONFIG_PATH" ]; then
           mkdir -p "$(dirname "{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}")"
           cp "$CONFIG_PATH" "{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
+          echo "Copied local renovate config from $CONFIG_PATH to the temporary repository."
+          echo "NOTE: This local copy will override what's in the remote repository for this test run only."
         fi
 
         # Return to original directory
@@ -104,6 +119,7 @@ tasks:
           -e RENOVATE_REPOSITORY="{{.REPOSITORY}}" \
           -e RENOVATE_FORK="{{.FORK | default "false"}}" \
           -e RENOVATE_INCLUDE_SUBMODULES="{{.INCLUDE_SUBMODULES | default "true"}}" \
+          -e RENOVATE_TARGET_BRANCH="$BRANCH" \
           -e GIT_CONFIG_GLOBAL="/tmp/gitconfig" \
           -e HOME="/tmp" \
           -e XDG_CONFIG_HOME="/tmp/config" \
@@ -134,5 +150,3 @@ tasks:
             rm -rf "$TEMP_GIT_DIR"
           fi
         fi
-    requires:
-      vars: ['REPOSITORY']
