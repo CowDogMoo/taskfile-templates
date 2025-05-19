@@ -13,6 +13,16 @@ tasks:
     cmds:
       - antsibull-changelog release --version $NEXT_VERSION
 
+  check-ansible:
+    desc: "Validate that Ansible is installed (for Ansible provisioners)"
+    cmds:
+      - |
+        if ! command -v ansible &> /dev/null; then
+          echo "'ansible' command not found. Please install Ansible: https://docs.ansible.com/ansible/latest/installation_guide/"
+          exit 1
+        fi
+    silent: true
+
   gen-changelog:
     desc: "Generate the changelog for the next release"
     cmds:
