@@ -3,7 +3,6 @@ version: "3"
 
 includes:
   pre-commit: pre-commit/Taskfile.yaml
-  github: github/Taskfile.yaml
 
 tasks:
   default:
@@ -17,9 +16,3 @@ tasks:
       - task: pre-commit:update-hooks
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
-
-  # Include GitHub tasks from the github/Taskfile.yaml
-  create-release:
-    desc: "Create a release on GitHub"
-    cmds:
-      - task: github:create-release
