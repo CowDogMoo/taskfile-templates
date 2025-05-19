@@ -32,13 +32,16 @@ tasks:
       - check-packer
     vars:
       COMMAND: '{{.COMMAND}}'
-      TEMPLATE_DIR: '{{.TEMPLATE_DIR | default "./"}}'
+      BASE_PATH: '{{.BASE_PATH | default "./"}}'
+      BLUEPRINT: '{{.BLUEPRINT | default ""}}'
+      TEMPLATE_DIR: '{{if .BLUEPRINT}}blueprints/{{.BLUEPRINT}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
       TEMPLATE: '{{.TEMPLATE | default ""}}'
       BUILDER: '{{.BUILDER | default ""}}'
       VAR_FILE: '{{.VAR_FILE | default ""}}'
       ONLY: '{{.ONLY | default ""}}'
       EXCEPT: '{{.EXCEPT | default ""}}'
       FORCE: '{{.FORCE | default "false"}}'
+      VARS: '{{.VARS | default ""}}'
     cmds:
       - |
         set -euo pipefail
@@ -51,15 +54,23 @@ tasks:
 
         # Validate template directory
         WORKING_DIR=$(pwd)
-        TEMPLATE_DIR="{{ .TEMPLATE_DIR }}"
-        FULL_PATH="$WORKING_DIR/$TEMPLATE_DIR"
 
-        if [ ! -d "$FULL_PATH" ]; then
-          echo "ERROR: Directory does not exist: $FULL_PATH"
+        # Determine full template path
+        if [ -n "{{.BASE_PATH}}" ]; then
+          TEMPLATE_DIR="${WORKING_DIR}/{{.BASE_PATH}}/{{.TEMPLATE_DIR}}"
+        else
+          TEMPLATE_DIR="${WORKING_DIR}/{{.TEMPLATE_DIR}}"
+        fi
+
+        # Remove any double slashes
+        TEMPLATE_DIR=$(echo "$TEMPLATE_DIR" | sed 's#//#/#g')
+
+        if [ ! -d "$TEMPLATE_DIR" ]; then
+          echo "ERROR: Directory does not exist: $TEMPLATE_DIR"
           exit 1
         fi
 
-        echo "Using path: $FULL_PATH"
+        echo "Using path: $TEMPLATE_DIR"
 
         # Configure packer flags
         FLAGS=""
@@ -80,19 +91,27 @@ tasks:
           FLAGS="$FLAGS -force"
         fi
 
+        # Add any extra variables
+        if [ -n "{{ .VARS }}" ]; then
+          # Split by spaces and add each as -var
+          for var in $(echo "{{ .VARS }}" | tr ' ' '\n'); do
+            FLAGS="$FLAGS -var \"$var\""
+          done
+        fi
+
         # Execute packer command
         if [ -n "{{ .TEMPLATE }}" ]; then
-          TEMPLATE_PATH="${FULL_PATH}/{{ .TEMPLATE }}"
+          TEMPLATE_PATH="${TEMPLATE_DIR}/{{ .TEMPLATE }}"
           if [ -f "$TEMPLATE_PATH" ]; then
             echo "Running packer {{ .COMMAND }} for template: {{ .TEMPLATE }}"
-            cd "$FULL_PATH" && packer {{ .COMMAND }} $FLAGS "{{ .TEMPLATE }}"
+            cd "$TEMPLATE_DIR" && eval "packer {{ .COMMAND }} $FLAGS \"{{ .TEMPLATE }}\""
           else
             echo "ERROR: Template does not exist: $TEMPLATE_PATH"
             exit 1
           fi
         else
           echo "Running packer {{ .COMMAND }} for all templates in directory"
-          cd "$FULL_PATH" && packer {{ .COMMAND }} $FLAGS .
+          cd "$TEMPLATE_DIR" && eval "packer {{ .COMMAND }} $FLAGS ."
         fi
 
   packer-init:
@@ -118,20 +137,54 @@ tasks:
           TEMPLATE: '{{.TEMPLATE}}'
           VAR_FILE: '{{.VAR_FILE}}'
 
-  packer-build:
-    desc: "Build image(s) from template"
+  packer-blueprint-build:
+    desc: "Build a blueprint image from anywhere in the repo"
+    deps:
+      - check-packer
     vars:
-      COMMAND: build
+      BLUEPRINT: '{{.BLUEPRINT}}'
+      ONLY: '{{.ONLY | default ""}}'
+      VARS: '{{.VARS | default ""}}'
     cmds:
-      - task: _packer-base
-        vars:
-          COMMAND: '{{.COMMAND}}'
-          TEMPLATE_DIR: '{{.TEMPLATE_DIR}}'
-          TEMPLATE: '{{.TEMPLATE}}'
-          VAR_FILE: '{{.VAR_FILE}}'
-          ONLY: '{{.ONLY}}'
-          EXCEPT: '{{.EXCEPT}}'
-          FORCE: '{{.FORCE}}'
+      - |
+        set -euo pipefail
+
+        # Validate required variables
+        if [ -z "{{.BLUEPRINT}}" ]; then
+          echo "ERROR: BLUEPRINT variable is required"
+          exit 1
+        fi
+
+        # Find the blueprint packer templates directory
+        TEMPLATE_DIR="blueprints/{{.BLUEPRINT}}/packer_templates"
+        if [ ! -d "$TEMPLATE_DIR" ]; then
+          echo "ERROR: Blueprint packer templates directory not found: $TEMPLATE_DIR"
+          exit 1
+        fi
+
+        echo "Using template directory: $TEMPLATE_DIR"
+
+        # Build packer command
+        CMD="packer build"
+
+        if [ -n "{{.ONLY}}" ]; then
+          CMD="$CMD -only={{.ONLY}}"
+        fi
+
+        # Parse any additional variables
+        if [ -n "{{.VARS}}" ]; then
+          # Split VARS by spaces and add each as -var
+          for VAR in {{.VARS}}; do
+            CMD="$CMD -var \"$VAR\""
+          done
+        fi
+
+        # Add the template directory
+        CMD="$CMD $TEMPLATE_DIR"
+
+        # Execute the command
+        echo "Executing: $CMD"
+        eval $CMD
 
   packer-console:
     desc: "Creates a console for testing variable interpolation"
