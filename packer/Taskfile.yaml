@@ -33,8 +33,8 @@ tasks:
     vars:
       COMMAND: '{{.COMMAND}}'
       BASE_PATH: '{{.BASE_PATH | default "./"}}'
-      BLUEPRINT: '{{.BLUEPRINT | default ""}}'
-      TEMPLATE_DIR: '{{if .BLUEPRINT}}blueprints/{{.BLUEPRINT}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
+      TEMPLATE_NAME: '{{.TEMPLATE_NAME | default ""}}'
+      TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}templates/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
       TEMPLATE: '{{.TEMPLATE | default ""}}'
       BUILDER: '{{.BUILDER | default ""}}'
       VAR_FILE: '{{.VAR_FILE | default ""}}'
@@ -137,12 +137,13 @@ tasks:
           TEMPLATE: '{{.TEMPLATE}}'
           VAR_FILE: '{{.VAR_FILE}}'
 
-  packer-blueprint-build:
-    desc: "Build a blueprint image from anywhere in the repo"
+  packer-template-build:
+    desc: "Build a template image from anywhere in the repo"
     deps:
       - check-packer
     vars:
-      BLUEPRINT: '{{.BLUEPRINT}}'
+      TEMPLATE_NAME: '{{.TEMPLATE_NAME}}'
+      TEMPLATE_DIR: '{{if .TEMPLATE_DIR}}{{.TEMPLATE_DIR}}{{else}}templates/{{.TEMPLATE_NAME}}/packer_templates{{end}}'
       ONLY: '{{.ONLY | default ""}}'
       VARS: '{{.VARS | default ""}}'
     cmds:
@@ -150,19 +151,18 @@ tasks:
         set -euo pipefail
 
         # Validate required variables
-        if [ -z "{{.BLUEPRINT}}" ]; then
-          echo "ERROR: BLUEPRINT variable is required"
+        if [ -z "{{.TEMPLATE_NAME}}" ]; then
+          echo "ERROR: TEMPLATE_NAME variable is required"
           exit 1
         fi
 
-        # Find the blueprint packer templates directory
-        TEMPLATE_DIR="blueprints/{{.BLUEPRINT}}/packer_templates"
-        if [ ! -d "$TEMPLATE_DIR" ]; then
-          echo "ERROR: Blueprint packer templates directory not found: $TEMPLATE_DIR"
+        # Find the template packer templates directory
+        if [ ! -d "{{.TEMPLATE_DIR}}" ]; then
+          echo "ERROR: Template packer templates directory not found: {{.TEMPLATE_DIR}}"
           exit 1
         fi
 
-        echo "Using template directory: $TEMPLATE_DIR"
+        echo "Using template directory: {{.TEMPLATE_DIR}}"
 
         # Build packer command
         CMD="packer build"
@@ -180,7 +180,7 @@ tasks:
         fi
 
         # Add the template directory
-        CMD="$CMD $TEMPLATE_DIR"
+        CMD="$CMD {{.TEMPLATE_DIR}}"
 
         # Execute the command
         echo "Executing: $CMD"
