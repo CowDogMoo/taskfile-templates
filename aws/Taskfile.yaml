@@ -443,7 +443,7 @@ tasks:
         echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
 
   cleanup-kms:
-    desc: "Find and schedule deletion of unused KMS keys (those without Name tags) or keys matching a specified keyword"
+    desc: "Find and schedule deletion of unused KMS keys (those without aliases) or keys matching a specified keyword"
     deps:
       - check-aws
       - check-jq
@@ -469,11 +469,33 @@ tasks:
         ERRORS=0
 
         if [ -z "{{.KEYWORD}}" ]; then
-          echo "No KEYWORD provided. Finding KMS keys without Name tags..."
-          KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+          echo "No KEYWORD provided. Finding KMS keys without aliases..."
+
+          # Get all keys first
+          ALL_KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
             handle_error $? "Failed to list KMS keys"
             exit 1
           }
+
+          # Get all keys that have aliases
+          KEYS_WITH_ALIASES=$(aws kms list-aliases --region {{.REGION}} | jq -r '.Aliases[].TargetKeyId' | sort -u) || {
+            handle_error $? "Failed to list key aliases"
+            exit 1
+          }
+
+          # Initialize empty keys list
+          KEYS=""
+
+          # Find keys without aliases by comparing the two lists
+          for KEY_ID in $ALL_KEYS; do
+            if ! echo "$KEYS_WITH_ALIASES" | grep -q "$KEY_ID"; then
+              if [ -z "$KEYS" ]; then
+                KEYS="$KEY_ID"
+              else
+                KEYS="$KEYS $KEY_ID"
+              fi
+            fi
+          done
         else
           echo "Finding KMS keys with keyword: {{.KEYWORD}} in region {{.REGION}}..."
 
@@ -545,7 +567,7 @@ tasks:
 
         if [ -z "$KEYS" ]; then
           if [ -z "{{.KEYWORD}}" ]; then
-            echo "No keys found in region {{.REGION}}"
+            echo "No keys without aliases found in region {{.REGION}}"
           else
             echo "No keys found matching keyword {{.KEYWORD}} in region {{.REGION}}"
           fi
@@ -553,7 +575,9 @@ tasks:
         fi
 
         KEY_COUNT=$(echo "$KEYS" | wc -w | tr -d ' ')
-        if [ -n "{{.KEYWORD}}" ]; then
+        if [ -z "{{.KEYWORD}}" ]; then
+          echo "Found $KEY_COUNT key(s) without aliases"
+        else
           echo "Found $KEY_COUNT key(s) matching the keyword {{.KEYWORD}}"
         fi
 
@@ -571,29 +595,7 @@ tasks:
             if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
               echo "- $KEY_ID (already pending deletion, would skip)"
             else
-              PROCESS_KEY=false
-
-              if [ -n "{{.KEYWORD}}" ]; then
-                # If KEYWORD is provided, we've already filtered the keys
-                PROCESS_KEY=true
-              else
-                # If no KEYWORD, check if it has a Name tag
-                TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
-                  handle_error $? "Failed to list tags for key $KEY_ID"
-                  continue
-                }
-
-                HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
-                if [ -z "$HAS_NAME_TAG" ]; then
-                  PROCESS_KEY=true
-                else
-                  echo "- $KEY_ID (has Name tag, would skip)"
-                fi
-              fi
-
-              if [ "$PROCESS_KEY" = true ]; then
-                echo "- $KEY_ID (would disable and schedule for deletion in {{.DAYS_TO_DELETION}} days)"
-              fi
+              echo "- $KEY_ID (would disable and schedule for deletion in {{.DAYS_TO_DELETION}} days)"
             fi
           done
           echo "DRY RUN COMPLETE - No changes were made."
@@ -622,31 +624,9 @@ tasks:
             continue
           fi
 
-          PROCESS_KEY=false
-
-          if [ -n "{{.KEYWORD}}" ]; then
-            # If KEYWORD is provided, we've already filtered the keys
-            PROCESS_KEY=true
-          else
-            # If no KEYWORD, follow original logic (keys without Name tags)
-            TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
-              handle_error $? "Failed to list tags for key $KEY_ID"
-              continue
-            }
-
-            HAS_NAME_TAG=$(echo $TAGS | jq '.Tags[] | select(.TagKey=="Name")' 2>/dev/null)
-            if [ $? -ne 0 ]; then
-              echo "Error processing tags for key $KEY_ID"
-              ((ERRORS++))
-              continue
-            fi
-
-            if [ -z "$HAS_NAME_TAG" ]; then
-              PROCESS_KEY=true
-            else
-              echo "Key $KEY_ID skipped (has Name tag)"
-            fi
-          fi
+          # When KEYWORD is provided, we've already filtered the keys to process
+          # When no KEYWORD is provided, we've filtered keys without aliases
+          PROCESS_KEY=true
 
           if [ "$PROCESS_KEY" = true ]; then
             CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
