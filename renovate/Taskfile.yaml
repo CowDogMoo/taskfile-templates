@@ -4,6 +4,16 @@ includes:
   docker: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
 
 tasks:
+  check-npx:
+    desc: "Validate that npx is installed (for Node.js tasks)"
+    cmds:
+      - |
+        if ! command -v npx &> /dev/null; then
+          echo "'npx' command not found. Please install Node.js which includes npx: https://nodejs.org/en/download/"
+          exit 1
+        fi
+    silent: true
+
   check-repository-format:
     desc: "Validate repository format matches org/repo pattern"
     cmds:
@@ -150,3 +160,31 @@ tasks:
             rm -rf "$TEMP_GIT_DIR"
           fi
         fi
+
+  renovate-lint:
+    desc: "Validate Renovate configuration using renovate-config-validator"
+    deps:
+      - check-npx
+    cmds:
+      - |
+        echo "Validating Renovate configuration..."
+
+        # Determine the config file path
+        CONFIG_PATH="{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
+
+        # Check if config file exists
+        if [ ! -f "$CONFIG_PATH" ]; then
+          echo "Error: Renovate configuration file not found at $CONFIG_PATH"
+          exit 1
+        fi
+
+        # Run the validator
+        npx --yes --package renovate -- renovate-config-validator "$CONFIG_PATH"
+
+        if [ $? -eq 0 ]; then
+          echo "✅ Renovate configuration is valid!"
+        else
+          echo "❌ Renovate configuration validation failed."
+          exit 1
+        fi
+    silent: false
