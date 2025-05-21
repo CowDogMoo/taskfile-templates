@@ -161,6 +161,9 @@ tasks:
       TEMPLATE_DIR: '{{if .TEMPLATE_DIR}}{{.TEMPLATE_DIR}}{{else}}templates/{{.TEMPLATE_NAME}}/packer_templates{{end}}'
       ONLY: '{{.ONLY | default ""}}'
       VARS: '{{.VARS | default ""}}'
+    requires:
+      vars: ['TEMPLATE_NAME']
+
     cmds:
       - |
         set -euo pipefail
