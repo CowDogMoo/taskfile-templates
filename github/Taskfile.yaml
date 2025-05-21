@@ -252,37 +252,29 @@ tasks:
       - |
         echo "Synchronizing all submodules..."
 
-        # First check if any submodules exist in .gitmodules
+        # STEP 0: Ensure submodules are initialized before running any 'foreach' or update
+        git submodule update --init --recursive
+
+        # Check if any submodules exist in .gitmodules
         if [ ! -f .gitmodules ] || [ ! -s .gitmodules ]; then
           echo "No submodules defined in this repository. Nothing to synchronize."
           exit 0
         fi
 
-        # Step 1: Initialize any uninitialized submodules
-        echo "Initializing any uninitialized submodules..."
-        git submodule init
-
-        # Step 2: Update all submodules to get their content
-        echo "Updating submodules content..."
-        git submodule update --init --recursive
-
-        # Step 3: Fix any detached HEAD in submodules by checking out proper branch
+        # Step 1: Fix any detached HEAD in submodules by checking out proper branch
         echo "Ensuring submodules are on the correct branch..."
         git submodule foreach '
-          # Get the branch the submodule is supposed to track from .gitmodules
+          # Get the branch submodule is supposed to track from .gitmodules
           configured_branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch)
 
           if [ -n "$configured_branch" ]; then
-            # Use the branch configured in .gitmodules if available
             branch="$configured_branch"
           else
-            # Intelligently determine default branch by checking which exists: main or master
             if git show-ref --verify --quiet refs/remotes/origin/main; then
               branch="main"
             elif git show-ref --verify --quiet refs/remotes/origin/master; then
               branch="master"
             else
-              # Try to get the default branch from remote
               remote_head=$(git remote show origin | grep "HEAD branch" | sed "s/.*: //")
               if [ -n "$remote_head" ]; then
                 branch="$remote_head"
@@ -293,7 +285,6 @@ tasks:
             fi
           fi
 
-          # Check if we are in detached HEAD state
           if git symbolic-ref -q HEAD >/dev/null; then
             echo "[$name] Already on a branch"
           else
@@ -302,7 +293,7 @@ tasks:
           fi
         '
 
-        # Step 4: Pull latest changes in each submodule if it's on a branch
+        # Step 2: Pull latest changes in each submodule if it's on a branch
         echo "Pulling latest changes for each submodule..."
         git submodule foreach '
           if git symbolic-ref -q HEAD >/dev/null; then
@@ -312,7 +303,7 @@ tasks:
           fi
         '
 
-        # Step 5: Final sync to ensure .git/config is up-to-date
+        # Step 3: Final sync to ensure .git/config is up-to-date
         git submodule sync --recursive
 
         echo "All submodules have been successfully synchronized."
