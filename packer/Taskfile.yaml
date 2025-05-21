@@ -12,6 +12,21 @@ tasks:
         fi
     silent: true
 
+  clean-packer-manifest:
+    desc: "Clean existing Docker manifest files"
+    vars:
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+    cmds:
+      - |
+        if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
+          echo "Manifest file {{ .MANIFEST_PATH }} does not exist, nothing to clean"
+          exit 0
+        fi
+
+        echo "Deleting manifest file: {{ .MANIFEST_PATH }}"
+        rm -f "{{ .MANIFEST_PATH }}"
+        echo "Manifest file deleted"
+
   lint:
     desc: "Run packer fmt check on all packer files"
     deps:
