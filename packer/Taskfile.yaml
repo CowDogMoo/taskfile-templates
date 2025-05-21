@@ -131,14 +131,57 @@ tasks:
 
   packer-init:
     desc: "Initialize a Packer working directory"
+    deps:
+      - check-packer
     vars:
-      COMMAND: init
+      TEMPLATE_DIR: '{{.TEMPLATE_DIR | default ""}}'
+      TEMPLATE: '{{.TEMPLATE | default ""}}'
+      FORCE: '{{.FORCE | default ""}}'
+      UPGRADE: '{{.UPGRADE | default ""}}'
     cmds:
-      - task: _packer-base
-        vars:
-          COMMAND: '{{.COMMAND}}'
-          TEMPLATE_DIR: '{{.TEMPLATE_DIR}}'
-          TEMPLATE: '{{.TEMPLATE}}'
+      - |
+        set -euo pipefail
+        # Build packer command
+        CMD="packer init"
+
+        # Add force flag if set
+        if [ "{{.FORCE}}" = "true" ]; then
+          CMD="$CMD -force"
+        fi
+
+        # Add upgrade flag if set
+        if [ "{{.UPGRADE}}" = "true" ]; then
+          CMD="$CMD -upgrade"
+        fi
+
+        # Add template directory if provided
+        if [ -n "{{.TEMPLATE_DIR}}" ]; then
+          if [ ! -d "{{.TEMPLATE_DIR}}" ]; then
+            echo "ERROR: Template directory not found: {{.TEMPLATE_DIR}}"
+            exit 1
+          fi
+
+          # Find the first .pkr.hcl file in the directory
+          TEMPLATE_FILE=$(find "{{.TEMPLATE_DIR}}" -name "*.pkr.hcl" -type f | head -n 1)
+
+          if [ -z "$TEMPLATE_FILE" ]; then
+            echo "ERROR: No .pkr.hcl files found in {{.TEMPLATE_DIR}}"
+            exit 1
+          fi
+
+          echo "Using template file: $TEMPLATE_FILE"
+          CMD="$CMD $TEMPLATE_FILE"
+        # If no directory but template is provided
+        elif [ -n "{{.TEMPLATE}}" ]; then
+          CMD="$CMD {{.TEMPLATE}}"
+        else
+          echo "ERROR: Either TEMPLATE_DIR or TEMPLATE variable is required"
+          exit 1
+        fi
+
+        # Execute the command
+        echo "Executing: $CMD"
+        eval $CMD
 
   packer-validate:
     desc: "Check that a template is valid"
