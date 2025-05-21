@@ -12,7 +12,7 @@ tasks:
         fi
     silent: true
 
-  clean-packer-manifest:
+  cleanup-packer-manifest:
     desc: "Clean existing Docker manifest files"
     vars:
       MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
