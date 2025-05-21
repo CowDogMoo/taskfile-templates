@@ -81,29 +81,47 @@ tasks:
 
         echo "Pushing multi-architecture images for ${FULL_IMAGE}"
 
-        # First authenticate
-        echo "Authenticating to {{ .REGISTRY }}..."
-        echo {{ .GITHUB_TOKEN }} | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+        # First authenticate (only if not already authenticated)
+        if ! docker info | grep -q "Username: {{ .GITHUB_USER }}"; then
+          echo "Authenticating to {{ .REGISTRY }}..."
+          echo {{ .GITHUB_TOKEN }} | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+        else
+          echo "Already authenticated to Docker registry"
+        fi
 
-        # Tag the ARM64 image
-        echo "Tagging ARM64 image..."
-        docker tag {{ .ARM64_HASH }} ${ARM64_IMAGE}
+        # Check if ARM64 image exists remotely before pushing
+        ARM64_EXISTS=false
+        if docker manifest inspect ${ARM64_IMAGE} >/dev/null 2>&1; then
+          echo "ARM64 image already exists in registry, skipping push"
+          ARM64_EXISTS=true
+        else
+          # Tag the ARM64 image
+          echo "Tagging ARM64 image..."
+          docker tag {{ .ARM64_HASH }} ${ARM64_IMAGE}
 
-        # Push the ARM64 image
-        echo "Pushing ARM64 image..."
-        docker push ${ARM64_IMAGE}
+          # Push the ARM64 image
+          echo "Pushing ARM64 image..."
+          docker push ${ARM64_IMAGE}
+        fi
 
-        # Tag the AMD64 image
-        echo "Tagging AMD64 image..."
-        docker tag {{ .AMD64_HASH }} ${AMD64_IMAGE}
+        # Check if AMD64 image exists remotely before pushing
+        AMD64_EXISTS=false
+        if docker manifest inspect ${AMD64_IMAGE} >/dev/null 2>&1; then
+          echo "AMD64 image already exists in registry, skipping push"
+          AMD64_EXISTS=true
+        else
+          # Tag the AMD64 image
+          echo "Tagging AMD64 image..."
+          docker tag {{ .AMD64_HASH }} ${AMD64_IMAGE}
 
-        # Push the AMD64 image
-        echo "Pushing AMD64 image..."
-        docker push ${AMD64_IMAGE}
+          # Push the AMD64 image
+          echo "Pushing AMD64 image..."
+          docker push ${AMD64_IMAGE}
+        fi
 
         # Create and push the multi-architecture manifest
         echo "Creating multi-architecture manifest..."
-        docker manifest create ${MANIFEST_IMAGE} \
+        docker manifest create --amend ${MANIFEST_IMAGE} \
           ${ARM64_IMAGE} \
           ${AMD64_IMAGE}
 
