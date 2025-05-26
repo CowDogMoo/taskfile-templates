@@ -1,40 +1,61 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
-    "docker:enableMajor",
-    ":disableRateLimiting",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":enablePreCommit",
-    ":automergeDigest",
-    ":automergeBranch",
-    "helpers:pinGitHubActionDigests"
+    'config:recommended',
+    ':disableRateLimiting',
+    ':dependencyDashboard',
+    'docker:enableMajor',
+    ':semanticCommits',
+    ':enablePreCommit',
+    ':automergeDigest',
+    ':automergeBranch',
+    'helpers:pinGitHubActionDigests'
   ],
-  "dependencyDashboardTitle": "Renovate Dashboard 🤖",
-  "suppressNotifications": ["prIgnoreNotification"],
-  "rebaseWhen": "conflicted",
-  "commitBodyTable": true,
-  "pre-commit": {
-    "enabled": true
+  dependencyDashboardLabels: [
+    'renovate-dashboard',
+  ],
+  dependencyDashboardTitle: 'Renovate Dashboard 🤖',
+  suppressNotifications: [
+    'prIgnoreNotification',
+  ],
+  rebaseWhen: 'conflicted',
+  commitBodyTable: true,
+  labels: [
+    'renovate',
+  ],
+  platformAutomerge: true,
+  'pre-commit': {
+    enabled: true,
   },
-  "packageRules": [
+  packageRules: [
     {
-      "description": "Auto merge GitHub Actions minor and patch updates",
-      "matchManagers": ["github-actions"],
-      "matchDatasources": ["github-tags"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "branch",
-      "matchUpdateTypes": ["digest"]
+      description: 'Auto merge GitHub Actions minor and patch updates',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchDatasources: [
+        'github-tags',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      automerge: true,
+      automergeType: 'branch',
     },
     {
-      "description": "Auto merge non-major updates for other dependencies",
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "merge-queue",
-      "matchManagers": ["pre-commit", "regex"]
-    }
+      description: 'Auto merge non-major updates for other dependencies',
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+      automergeStrategy: 'merge-queue',
+      matchManagers: [
+        'pre-commit',
+        'custom.regex',
+      ],
+    },
   ]
 }

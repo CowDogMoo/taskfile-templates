@@ -1,28 +1,32 @@
 ---
-name: Renovate
+name: 🤖 Renovate
 on:
-  # checkov:skip=CKV_GHA_7: "Workflow dispatch inputs are required for manual debugging and configuration"
-  workflow_dispatch:
-    inputs:
-      dryRun:
-        description: Dry Run
-        default: "false"
-        required: false
-      logLevel:
-        description: Log Level
-        default: "debug"
-        required: false
-      version:
-        description: Renovate version
-        default: latest
-        required: false
-  schedule:
-    # Run every week on sunday and wednesday at 00:00 UTC
-    - cron: "0 0 * * 0,3"
   push:
     branches: ["main"]
     paths:
       - .github/renovate.json5
+  schedule:
+    # Run every week on sunday and wednesday at 00:00 UTC
+    - cron: "0 0 * * 0,3"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: Dry Run
+        type: boolean
+        default: false
+        required: true
+      logLevel:
+        description: Log Level
+        type: choice
+        default: info
+        options:
+          - debug
+          - info
+        required: true
+      version:
+        description: Renovate Version
+        default: latest
+        required: true
 
 concurrency:
   cancel-in-progress: true
@@ -30,15 +34,17 @@ concurrency:
 
 # Retrieve BOT_USER_ID via `curl -s "https://api.github.com/users/${BOT_USERNAME}%5Bbot%5D" | jq .id`
 env:
-  RENOVATE_AUTODISCOVER: true
-  RENOVATE_AUTODISCOVER_FILTER: "${{ github.repository }}"
-  RENOVATE_ONBOARDING_CONFIG_FILE_NAME: .github/renovate.json5
-  RENOVATE_PLATFORM: github
-  RENOVATE_PLATFORM_COMMIT: true
-  RENOVATE_USERNAME: "${{ secrets.BOT_USERNAME }}[bot]"
-  WORKFLOW_DRY_RUN: false
-  WORKFLOW_LOG_LEVEL: debug
-  WORKFLOW_VERSION: latest # 37.59.8
+  GO_VERSION: 1.24.0
+  PYTHON_VERSION: 3.12.6
+  RENOVATE_GIT_AUTHOR: "${{ secrets.BOT_USERNAME }} <${{ secrets.BOT_USER_ID }}+${{ secrets.BOT_USERNAME }}[bot]@users.noreply.github.com>"
+
+# Permissions block for GitHub App
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: read
 
 jobs:
   renovate:
@@ -57,27 +63,38 @@ jobs:
         with:
           token: "${{ steps.app-token.outputs.token }}"
 
-      - name: Override default config from dispatch variables
-        run: |
-          echo "RENOVATE_DRY_RUN=${{ github.event.inputs.dryRun || env.WORKFLOW_DRY_RUN }}" >> "${GITHUB_ENV}"
-          echo "LOG_LEVEL=${{ github.event.inputs.logLevel || env.WORKFLOW_LOG_LEVEL }}" >> "${GITHUB_ENV}"
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Delete old dashboard
+      - name: Install python dependencies
+        run: python3 -m pip install checkov pre-commit
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - name: Install go module dependencies
         run: |
-          ISSUE_NUMBER=$(gh issue list -S 'Renovate Dashboard 🤖' --json number -q '.[0].number')
-          if [ "$ISSUE_NUMBER" != "null" ] && [ -n "$ISSUE_NUMBER" ]; then
-            gh issue close "$ISSUE_NUMBER"
-          else
-            echo "No issue found to close."
-          fi
-        env:
-          GITHUB_TOKEN: "${{ steps.app-token.outputs.token }}"
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          go install github.com/aquasecurity/tfsec/cmd/tfsec@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/terraform-docs/terraform-docs@latest
 
       - name: Renovate
-        uses: renovatebot/github-action@2e8e8c59e00d930224943f86f6812fbc6640f454 # v42.0.3
+        uses: renovatebot/github-action@8058cfe11252651a837a58e2e3370fbc0e72c658 # v42.0.4
+        env:
+          LOG_LEVEL: "${{ inputs.logLevel || 'debug' }}"
+          RENOVATE_AUTODISCOVER: true
+          RENOVATE_AUTODISCOVER_FILTER: "${{ github.repository }}"
+          RENOVATE_DRY_RUN: "${{ inputs.dryRun }}"
+          RENOVATE_INTERNAL_CHECKS_FILTER: strict
+          RENOVATE_PLATFORM: github
+          RENOVATE_PLATFORM_COMMIT: true
         with:
           configurationFile: "${{ env.RENOVATE_ONBOARDING_CONFIG_FILE_NAME }}"
           token: "${{ steps.app-token.outputs.token }}"
-          renovate-version: "${{ github.event.inputs.version || env.WORKFLOW_VERSION }}"
-        env:
-          LOG_LEVEL: "${{ env.LOG_LEVEL }}"
+          renovate-version: "${{ inputs.version || 'latest' }}"
