@@ -1,0 +1,718 @@
+---
+version: "3"
+
+tasks:
+  check-aws:
+    desc: "Validate that AWS CLI is installed"
+    cmds:
+      - |
+        if ! command -v aws &> /dev/null; then
+          echo "'aws' command not found. Please install AWS CLI: https://aws.amazon.com/cli/"
+          exit 1
+        fi
+    silent: true
+
+  check-jq:
+    desc: "Validate that jq is installed"
+    cmds:
+      - |
+        if ! command -v jq &> /dev/null; then
+          echo "'jq' command not found. Please install jq: https://stedolan.github.io/jq/download/"
+          exit 1
+        fi
+    silent: true
+
+  cleanup-bucket:
+    desc: "Delete S3 buckets matching a specified keyword"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding S3 buckets with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        BUCKETS=$(aws s3api list-buckets | jq -r '.Buckets[] | select(.Name | contains("{{.KEYWORD}}")) | .Name')
+
+        if [ -z "$BUCKETS" ]; then
+          echo "No buckets found matching keyword {{.KEYWORD}}"
+          exit 0
+        fi
+
+        BUCKET_COUNT=$(echo "$BUCKETS" | wc -l | tr -d ' ')
+        echo "Found $BUCKET_COUNT bucket(s) matching the keyword {{.KEYWORD}}"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No buckets will be deleted. Matching buckets:"
+          echo "$BUCKETS"
+          exit 0
+        fi
+
+        echo "Proceeding with bucket deletion..."
+        ERRORS=0
+
+        for BUCKET in $BUCKETS; do
+          echo "----------------------------------------"
+          echo "Processing bucket: $BUCKET"
+
+          # First, empty the bucket (required before deletion)
+          echo "Emptying bucket contents..."
+          aws s3 rm s3://$BUCKET --recursive --region {{.REGION}} || {
+            echo "Error: Failed to empty bucket $BUCKET"
+            ((ERRORS++))
+            continue
+          }
+
+          # Delete the bucket
+          echo "Deleting bucket..."
+          aws s3api delete-bucket --bucket $BUCKET --region {{.REGION}} || {
+            echo "Error: Failed to delete bucket $BUCKET"
+            ((ERRORS++))
+            continue
+          }
+
+          echo "Successfully deleted bucket: $BUCKET"
+          echo "----------------------------------------"
+        done
+
+        if [ $ERRORS -gt 0 ]; then
+          echo "Bucket cleanup completed with $ERRORS error(s)"
+          exit 1
+        else
+          echo "Bucket cleanup completed successfully. All $BUCKET_COUNT buckets deleted."
+          exit 0
+        fi
+
+  cleanup-dynamodb:
+    desc: "Delete DynamoDB tables matching a specified keyword"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding DynamoDB tables with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        TABLES=$(aws dynamodb list-tables --region {{.REGION}} | jq -r '.TableNames[] | select(. | contains("{{.KEYWORD}}"))') || {
+          echo "Error: Failed to list DynamoDB tables"
+          exit 1
+        }
+
+        if [ -z "$TABLES" ]; then
+          echo "No DynamoDB tables found matching keyword {{.KEYWORD}}"
+          exit 0
+        fi
+
+        TABLE_COUNT=$(echo "$TABLES" | wc -l | tr -d ' ')
+        echo "Found $TABLE_COUNT table(s) matching the keyword {{.KEYWORD}}"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No tables will be deleted. Matching tables:"
+          echo "$TABLES"
+          exit 0
+        fi
+
+        echo "Proceeding with table deletion..."
+        ERRORS=0
+
+        for TABLE in $TABLES; do
+          echo "----------------------------------------"
+          echo "Processing table: $TABLE"
+
+          # Get table info to check for any backups that need to be cleaned up
+          echo "Checking for table backups..."
+          BACKUPS=$(aws dynamodb list-backups --table-name "$TABLE" --region {{.REGION}} | jq -r '.BackupSummaries[].BackupArn' 2>/dev/null) || {
+            echo "Warning: Failed to list backups for table $TABLE, continuing with deletion"
+          }
+
+          if [ -n "$BACKUPS" ]; then
+            echo "Found backups for table $TABLE, deleting them first..."
+            for BACKUP_ARN in $BACKUPS; do
+              echo "Deleting backup: $BACKUP_ARN"
+              aws dynamodb delete-backup --backup-arn "$BACKUP_ARN" --region {{.REGION}} || {
+                echo "Error: Failed to delete backup $BACKUP_ARN"
+                ((ERRORS++))
+              }
+            done
+          else
+            echo "No backups found for table $TABLE"
+          fi
+
+          # Delete the table
+          echo "Deleting table..."
+          aws dynamodb delete-table --table-name "$TABLE" --region {{.REGION}} || {
+            echo "Error: Failed to delete table $TABLE"
+            ((ERRORS++))
+            continue
+          }
+
+          echo "Successfully issued delete command for table: $TABLE"
+          echo "Waiting for table deletion to complete..."
+
+          # Wait for table to be deleted (with timeout to prevent endless waiting)
+          TIMEOUT=300  # 5 minutes timeout
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+
+            if [ $ELAPSED -gt $TIMEOUT ]; then
+              echo "Timeout reached while waiting for table $TABLE to be deleted"
+              break
+            fi
+
+            # Check if table still exists
+            TABLE_EXISTS=$(aws dynamodb describe-table --table-name "$TABLE" --region {{.REGION}} 2>&1 || echo "NOT_FOUND")
+
+            if [[ "$TABLE_EXISTS" == *"ResourceNotFoundException"* ]] || [[ "$TABLE_EXISTS" == "NOT_FOUND" ]]; then
+              echo "Table $TABLE has been deleted successfully"
+              break
+            else
+              echo "Still waiting for table $TABLE to be deleted... ($ELAPSED seconds elapsed)"
+              sleep 10
+            fi
+          done
+
+          echo "----------------------------------------"
+        done
+
+        if [ $ERRORS -gt 0 ]; then
+          echo "DynamoDB cleanup completed with $ERRORS error(s)"
+          exit 1
+        else
+          echo "DynamoDB cleanup completed successfully. All $TABLE_COUNT tables deleted."
+          exit 0
+        fi
+
+  cleanup-efs:
+    desc: "Delete EFS file system and its mount targets"
+    deps:
+      - check-aws
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
+            echo "Error: FILE_SYSTEM_ID is required"
+            exit 1
+        fi
+
+        # Check DRY_RUN flag at the beginning
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+            echo "DRY RUN MODE - No changes will be made"
+            echo "Would process file system: {{.FILE_SYSTEM_ID}}"
+        fi
+
+        echo "Retrieving mount targets for file system: {{.FILE_SYSTEM_ID}}"
+        MOUNT_TARGET_IDS=$(aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets[].MountTargetId" --output text)
+
+        if [ -z "$MOUNT_TARGET_IDS" ]; then
+            echo "No mount targets found for file system: {{.FILE_SYSTEM_ID}}"
+        else
+            echo "Found mount targets: $MOUNT_TARGET_IDS"
+
+            if [ "{{.DRY_RUN}}" = "true" ]; then
+                echo "Would delete these mount targets: $MOUNT_TARGET_IDS"
+            else
+                echo "Deleting mount targets..."
+                for MOUNT_TARGET_ID in $MOUNT_TARGET_IDS; do
+                    echo "Deleting mount target: $MOUNT_TARGET_ID"
+                    aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID" --region {{.REGION}}
+                    if [ $? -eq 0 ]; then
+                        echo "Successfully deleted mount target: $MOUNT_TARGET_ID"
+                    else
+                        echo "Failed to delete mount target: $MOUNT_TARGET_ID"
+                        exit 1
+                    fi
+                done
+
+                echo "Waiting for all mount targets to be deleted..."
+                while aws efs describe-mount-targets --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}} --query "MountTargets" --output text | grep -q .; do
+                    sleep 5
+                    echo "Still waiting for mount targets to be deleted..."
+                done
+                echo "All mount targets deleted."
+            fi
+        fi
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+            echo "Would delete file system: {{.FILE_SYSTEM_ID}}"
+            exit 0
+        fi
+
+        echo "Deleting file system: {{.FILE_SYSTEM_ID}}"
+        aws efs delete-file-system --file-system-id "{{.FILE_SYSTEM_ID}}" --region {{.REGION}}
+
+        if [ $? -eq 0 ]; then
+            echo "File system {{.FILE_SYSTEM_ID}} successfully deleted."
+        else
+            echo "Failed to delete file system {{.FILE_SYSTEM_ID}}."
+            exit 1
+        fi
+
+  cleanup-iam:
+    desc: "Clean up IAM resources matching a specified keyword"
+    deps:
+      - check-aws
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.KEYWORD}}" ]; then
+            echo "Error: KEYWORD is required"
+            exit 1
+        fi
+
+        echo "Finding IAM resources with keyword: {{.KEYWORD}} in region {{.REGION}}"
+        echo "DRY_RUN is set to: {{.DRY_RUN}}"
+
+        # Define the cleanup function
+        clean_up_iam_resources() {
+            while IFS= read -r line; do
+                # Skip empty lines
+                [ -z "$line" ] && continue
+
+                resource_arn=$(echo "$line" | awk '{print $2}')
+                # Skip if we can't extract a valid ARN
+                if [ -z "$resource_arn" ]; then
+                    echo "Warning: Could not extract ARN from line: $line"
+                    continue
+                fi
+
+                if [[ "$resource_arn" =~ ^arn:aws:iam::[0-9]+:policy/.+ ]]; then
+                    policy_arn=$resource_arn
+                    echo "Processing policy: $policy_arn"
+                    roles=$(aws iam list-entities-for-policy --policy-arn "$policy_arn" --query 'PolicyRoles[].RoleName' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$roles" ] && [ "$roles" != "None" ]; then
+                        for role in $roles; do
+                            echo "Detaching policy $policy_arn from $role"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to detach policy from $role"
+                            else
+                                echo "[DRY RUN] Would detach policy $policy_arn from $role"
+                            fi
+                        done
+                    else
+                        echo "No roles attached to policy $policy_arn"
+                    fi
+
+                    echo "Deleting policy: $policy_arn"
+                    if [ "{{.DRY_RUN}}" != "true" ]; then
+                        aws iam delete-policy --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to delete policy $policy_arn"
+                    else
+                        echo "[DRY RUN] Would delete policy: $policy_arn"
+                    fi
+                elif [[ "$resource_arn" =~ ^arn:aws:iam::[0-9]+:role/.+ ]]; then
+                    role_name=$(echo "$resource_arn" | awk -F'/' '{print $2}')
+                    echo "Processing role: $role_name"
+
+                    # Get instance profiles (if any)
+                    instance_profiles=$(aws iam list-instance-profiles-for-role --role-name "$role_name" --query 'InstanceProfiles[].InstanceProfileName' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$instance_profiles" ] && [ "$instance_profiles" != "None" ]; then
+                        for profile in $instance_profiles; do
+                            echo "Removing role $role_name from instance profile $profile"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam remove-role-from-instance-profile --instance-profile-name "$profile" --role-name "$role_name" 2>/dev/null || echo "Failed to remove role from profile $profile"
+                            else
+                                echo "[DRY RUN] Would remove role $role_name from instance profile $profile"
+                            fi
+                        done
+                    else
+                        echo "No instance profiles for role $role_name"
+                    fi
+
+                    # Get attached policies
+                    policies=$(aws iam list-attached-role-policies --role-name "$role_name" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$policies" ] && [ "$policies" != "None" ]; then
+                        for policy_arn in $policies; do
+                            echo "Detaching policy $policy_arn from $role_name"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam detach-role-policy --role-name "$role_name" --policy-arn "$policy_arn" 2>/dev/null || echo "Failed to detach policy $policy_arn from role"
+                            else
+                                echo "[DRY RUN] Would detach policy $policy_arn from $role_name"
+                            fi
+                        done
+                    else
+                        echo "No attached policies for role $role_name"
+                    fi
+
+                    # Get inline policies
+                    inline_policies=$(aws iam list-role-policies --role-name "$role_name" --query 'PolicyNames[]' --output text 2>/dev/null || echo "")
+
+                    if [ -n "$inline_policies" ] && [ "$inline_policies" != "None" ]; then
+                        for policy_name in $inline_policies; do
+                            echo "Deleting inline policy $policy_name from $role_name"
+                            if [ "{{.DRY_RUN}}" != "true" ]; then
+                                aws iam delete-role-policy --role-name "$role_name" --policy-name "$policy_name" 2>/dev/null || echo "Failed to delete inline policy $policy_name"
+                            else
+                                echo "[DRY RUN] Would delete inline policy $policy_name from $role_name"
+                            fi
+                        done
+                    else
+                        echo "No inline policies for role $role_name"
+                    fi
+
+                    # Delete the role
+                    echo "Attempting to delete role: $role_name"
+                    if [ "{{.DRY_RUN}}" != "true" ]; then
+                        if aws iam delete-role --role-name "$role_name" 2>/dev/null; then
+                            echo "Successfully deleted role: $role_name"
+                        else
+                            echo "Failed to delete role: $role_name. Check for any remaining dependencies."
+                        fi
+                    else
+                        echo "[DRY RUN] Would attempt to delete role: $role_name"
+                    fi
+                else
+                    echo "Invalid or unrecognized resource ARN: $resource_arn"
+                fi
+            done
+        }
+
+        # Find IAM resources with the keyword - with better error handling
+        echo "Searching for IAM resources with '{{.KEYWORD}}' in the name..."
+        set +e  # Don't exit on error
+
+        # Use a temporary file to store results
+        TEMP_ROLES=$(mktemp)
+        TEMP_POLICIES=$(mktemp)
+
+        # Get roles that match the keyword
+        aws iam list-roles --query "Roles[].[RoleName, Arn]" --output text 2>/dev/null | grep -i "{{.KEYWORD}}" > "$TEMP_ROLES" || true
+
+        # Get policies that match the keyword
+        aws iam list-policies --query "Policies[].[PolicyName, Arn]" --output text 2>/dev/null | grep -i "{{.KEYWORD}}" > "$TEMP_POLICIES" || true
+
+        # Count resources found
+        ROLE_COUNT=$(wc -l < "$TEMP_ROLES" | tr -d ' ')
+        POLICY_COUNT=$(wc -l < "$TEMP_POLICIES" | tr -d ' ')
+        TOTAL_COUNT=$((ROLE_COUNT + POLICY_COUNT))
+
+        if [ $TOTAL_COUNT -eq 0 ]; then
+          echo "No IAM resources found matching keyword '{{.KEYWORD}}'"
+          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+          exit 0
+        fi
+
+        echo "Found $ROLE_COUNT roles and $POLICY_COUNT policies matching the keyword '{{.KEYWORD}}'"
+
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No resources will be deleted. Matching resources:"
+          echo "ROLES:"
+          cat "$TEMP_ROLES"
+          echo "POLICIES:"
+          cat "$TEMP_POLICIES"
+          echo "To perform actual deletion, run with DRY_RUN=false"
+          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+          exit 0
+        fi
+
+        echo "Proceeding with IAM resource cleanup..."
+
+        # Clean up roles and policies
+        cat "$TEMP_ROLES" | clean_up_iam_resources
+        cat "$TEMP_POLICIES" | clean_up_iam_resources
+
+        # Clean up temporary files
+        rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
+
+        echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
+
+  cleanup-kms:
+    desc: "Find and schedule deletion of unused KMS keys (those without aliases) or keys matching a specified keyword"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      KEYWORD: '{{.KEYWORD | default ""}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        # Function to handle errors
+        handle_error() {
+          local exit_code=$1
+          local error_msg=$2
+          echo "Error: $error_msg"
+          if [ "$exit_code" -eq 254 ] || [ "$exit_code" -eq 255 ]; then
+            echo "Permission denied or authentication error. Skipping key..."
+            return 0
+          fi
+          return $exit_code
+        }
+
+        ERRORS=0
+
+        if [ -z "{{.KEYWORD}}" ]; then
+          echo "No KEYWORD provided. Finding KMS keys without aliases..."
+
+          # Get all keys first
+          ALL_KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+            handle_error $? "Failed to list KMS keys"
+            exit 1
+          }
+
+          # Get all keys that have aliases
+          KEYS_WITH_ALIASES=$(aws kms list-aliases --region {{.REGION}} | jq -r '.Aliases[].TargetKeyId' | sort -u) || {
+            handle_error $? "Failed to list key aliases"
+            exit 1
+          }
+
+          # Initialize empty keys list
+          KEYS=""
+
+          # Find keys without aliases by comparing the two lists
+          for KEY_ID in $ALL_KEYS; do
+            if ! echo "$KEYS_WITH_ALIASES" | grep -q "$KEY_ID"; then
+              if [ -z "$KEYS" ]; then
+                KEYS="$KEY_ID"
+              else
+                KEYS="$KEYS $KEY_ID"
+              fi
+            fi
+          done
+        else
+          echo "Finding KMS keys with keyword: {{.KEYWORD}} in region {{.REGION}}..."
+
+          # If keyword looks like an alias prefix, search aliases first - more efficient
+          if [[ "{{.KEYWORD}}" == *"-"* ]]; then
+            echo "Searching for keys with matching aliases..."
+            # Get aliases that match the keyword
+            ALIAS_KEYS=$(aws kms list-aliases --region {{.REGION}} | \
+              jq -r --arg kw "{{.KEYWORD}}" '.Aliases[] | select(.AliasName | contains($kw)) | .TargetKeyId' | sort -u) || {
+              handle_error $? "Failed to list key aliases"
+            }
+
+            if [ -n "$ALIAS_KEYS" ]; then
+              KEYS="$ALIAS_KEYS"
+              echo "Found keys with matching aliases."
+            else
+              echo "No keys found with matching aliases. Checking other key properties..."
+              KEYS=""
+            fi
+          else
+            KEYS=""
+          fi
+
+          # If no keys found by aliases or keyword doesn't look like an alias, check key IDs
+          if [ -z "$KEYS" ]; then
+            echo "Checking key IDs..."
+            # First get all keys
+            ALL_KEYS=$(aws kms list-keys --region {{.REGION}} --query 'Keys[*].KeyId' --output text) || {
+              handle_error $? "Failed to list KMS keys"
+              exit 1
+            }
+
+            # Check if any key ID contains the keyword
+            for KEY_ID in $ALL_KEYS; do
+              if [[ "$KEY_ID" == *"{{.KEYWORD}}"* ]]; then
+                if [ -z "$KEYS" ]; then
+                  KEYS="$KEY_ID"
+                else
+                  KEYS="$KEYS $KEY_ID"
+                fi
+              fi
+            done
+
+            # If still no keys, check tags only if needed
+            if [ -z "$KEYS" ]; then
+              echo "Checking key tags..."
+              for KEY_ID in $ALL_KEYS; do
+                TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+                  handle_error $? "Failed to list tags for key $KEY_ID"
+                  continue
+                }
+
+                if echo "$TAGS" | jq -r '.Tags[] | "\(.TagKey):\(.TagValue)"' 2>/dev/null | grep -q "{{.KEYWORD}}"; then
+                  if [ -z "$KEYS" ]; then
+                    KEYS="$KEY_ID"
+                  else
+                    KEYS="$KEYS $KEY_ID"
+                  fi
+                fi
+              done
+            fi
+          fi
+
+          # Ensure unique keys and trim spaces
+          if [ -n "$KEYS" ]; then
+            KEYS=$(echo "$KEYS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+          fi
+        fi
+
+        if [ -z "$KEYS" ]; then
+          if [ -z "{{.KEYWORD}}" ]; then
+            echo "No keys without aliases found in region {{.REGION}}"
+          else
+            echo "No keys found matching keyword {{.KEYWORD}} in region {{.REGION}}"
+          fi
+          exit 0
+        fi
+
+        KEY_COUNT=$(echo "$KEYS" | wc -w | tr -d ' ')
+        if [ -z "{{.KEYWORD}}" ]; then
+          echo "Found $KEY_COUNT key(s) without aliases"
+        else
+          echo "Found $KEY_COUNT key(s) matching the keyword {{.KEYWORD}}"
+        fi
+
+        # Check if in DRY_RUN mode
+        if [ "{{.DRY_RUN}}" = "true" ]; then
+          echo "DRY RUN MODE - No keys will be disabled or scheduled for deletion."
+          echo "Would process the following $KEY_COUNT keys:"
+          for KEY_ID in $KEYS; do
+            KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+              handle_error $? "Failed to describe key $KEY_ID"
+              continue
+            }
+
+            DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState' 2>/dev/null)
+            if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
+              echo "- $KEY_ID (already pending deletion, would skip)"
+            else
+              echo "- $KEY_ID (would disable and schedule for deletion in {{.DAYS_TO_DELETION}} days)"
+            fi
+          done
+          echo "DRY RUN COMPLETE - No changes were made."
+          exit 0
+        fi
+
+        for KEY_ID in $KEYS; do
+          echo "Processing KEY_ID: $KEY_ID"
+          echo "----------------------------------------"
+
+          KEY_INFO=$(aws kms describe-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+            handle_error $? "Failed to describe key $KEY_ID"
+            continue
+          }
+
+          DELETION_STATUS=$(echo $KEY_INFO | jq -r '.KeyMetadata.KeyState' 2>/dev/null)
+          if [ -z "$DELETION_STATUS" ]; then
+            echo "Error: Could not determine key status for $KEY_ID"
+            ((ERRORS++))
+            continue
+          fi
+          echo "Key status: $DELETION_STATUS"
+
+          if [ "$DELETION_STATUS" = "PendingDeletion" ]; then
+            echo "Key $KEY_ID is already pending deletion. Skipping..."
+            continue
+          fi
+
+          # When KEYWORD is provided, we've already filtered the keys to process
+          # When no KEYWORD is provided, we've filtered keys without aliases
+          PROCESS_KEY=true
+
+          if [ "$PROCESS_KEY" = true ]; then
+            CREATION_DATE=$(echo $KEY_INFO | jq -r '.KeyMetadata.CreationDate' 2>/dev/null)
+            if [ -z "$CREATION_DATE" ]; then
+              echo "Error: Could not determine creation date for $KEY_ID"
+              ((ERRORS++))
+              continue
+            fi
+            echo "Creation date: $CREATION_DATE"
+
+            echo "Processing key for deletion: $KEY_ID"
+
+            aws kms disable-key --key-id $KEY_ID --region {{.REGION}} 2>/dev/null || {
+              exit_status=$?
+              handle_error $exit_status "Failed to disable key $KEY_ID"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+              continue
+            }
+
+            aws kms schedule-key-deletion \
+              --key-id $KEY_ID \
+              --pending-window-in-days {{.DAYS_TO_DELETION}} \
+              --region {{.REGION}} 2>/dev/null || {
+              exit_status=$?
+              handle_error $exit_status "Failed to schedule key $KEY_ID for deletion"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+              continue
+            }
+
+            # Get all aliases for this key
+            ALIASES=$(aws kms list-aliases --key-id $KEY_ID --region {{.REGION}} 2>/dev/null) || {
+              exit_status=$?
+              handle_error $exit_status "Failed to list aliases for key $KEY_ID"
+              if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                ((ERRORS++))
+              fi
+            }
+
+            # Check if there are any aliases
+            ALIAS_COUNT=$(echo "$ALIASES" | jq '.Aliases | length')
+            if [ "$ALIAS_COUNT" -gt 0 ]; then
+              echo "Found $ALIAS_COUNT alias(es) for key $KEY_ID. Deleting..."
+
+              # Delete each alias
+              for ALIAS_NAME in $(echo "$ALIASES" | jq -r '.Aliases[].AliasName'); do
+                echo "Deleting alias: $ALIAS_NAME"
+                aws kms delete-alias --alias-name "$ALIAS_NAME" --region {{.REGION}} 2>/dev/null || {
+                  exit_status=$?
+                  handle_error $exit_status "Failed to delete alias $ALIAS_NAME"
+                  if [ $exit_status -ne 254 ] && [ $exit_status -ne 255 ]; then
+                    ((ERRORS++))
+                  fi
+                  continue
+                }
+                echo "Successfully deleted alias $ALIAS_NAME"
+              done
+            else
+              echo "No aliases found for key $KEY_ID"
+            fi
+
+            echo "Successfully scheduled key $KEY_ID for deletion in {{.DAYS_TO_DELETION}} days"
+          fi
+          echo "----------------------------------------"
+        done
+
+        echo "Cleanup complete! Keys will be deleted after the waiting period."
+        if [ $ERRORS -gt 0 ]; then
+          echo "Warning: Encountered $ERRORS error(s) during processing"
+          exit 1
+        fi
+        exit 0
+
+  list-running-instances:
+    desc: "List all running EC2 instances with details"
+    deps:
+      - check-aws
+    vars:
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+    cmds:
+      - |
+        aws ec2 describe-instances \
+          --query "Reservations[*].Instances[*].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}" \
+          --filters Name=instance-state-name,Values=running \
+          --region {{.REGION}} \
+          --output json

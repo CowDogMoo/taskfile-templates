@@ -1,0 +1,375 @@
+---
+version: "3"
+
+tasks:
+  check-packer:
+    desc: "Validate that Packer is installed"
+    cmds:
+      - |
+        if ! command -v packer &> /dev/null; then
+          echo "'packer' command not found. Please install Packer: https://www.packer.io/downloads"
+          exit 1
+        fi
+    silent: true
+
+  cleanup-packer-manifest:
+    desc: "Clean existing Docker manifest files"
+    vars:
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+    cmds:
+      - |
+        if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
+          echo "Manifest file {{ .MANIFEST_PATH }} does not exist, nothing to clean"
+          exit 0
+        fi
+
+        echo "Deleting manifest file: {{ .MANIFEST_PATH }}"
+        rm -f "{{ .MANIFEST_PATH }}"
+        echo "Manifest file deleted"
+
+  lint:
+    desc: "Run packer fmt check on all packer files"
+    deps:
+      - check-packer
+    cmds:
+      - |
+        echo "Running packer fmt check"
+        packer fmt -check -recursive .
+        echo "Running packer validate on all templates"
+        find . -type f -name "*.pkr.hcl" -exec dirname {} \; | uniq | while read dir; do
+          (cd "$dir" && packer validate .)
+        done
+    silent: true
+
+  _packer-base:
+    internal: true
+    deps:
+      - check-packer
+    vars:
+      COMMAND: '{{.COMMAND}}'
+      BASE_PATH: '{{.BASE_PATH | default "./"}}'
+      TEMPLATE_NAME: '{{.TEMPLATE_NAME | default ""}}'
+      TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}templates/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
+      TEMPLATE: '{{.TEMPLATE | default ""}}'
+      BUILDER: '{{.BUILDER | default ""}}'
+      VAR_FILE: '{{.VAR_FILE | default ""}}'
+      ONLY: '{{.ONLY | default ""}}'
+      EXCEPT: '{{.EXCEPT | default ""}}'
+      FORCE: '{{.FORCE | default "false"}}'
+      VARS: '{{.VARS | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Check for required COMMAND variable
+        if [ -z "{{.COMMAND}}" ]; then
+          echo "ERROR: COMMAND variable is not set"
+          exit 1
+        fi
+
+        # Validate template directory
+        WORKING_DIR=$(pwd)
+
+        # Determine full template path
+        if [ -n "{{.BASE_PATH}}" ]; then
+          TEMPLATE_DIR="${WORKING_DIR}/{{.BASE_PATH}}/{{.TEMPLATE_DIR}}"
+        else
+          TEMPLATE_DIR="${WORKING_DIR}/{{.TEMPLATE_DIR}}"
+        fi
+
+        # Remove any double slashes
+        TEMPLATE_DIR=$(echo "$TEMPLATE_DIR" | sed 's#//#/#g')
+
+        if [ ! -d "$TEMPLATE_DIR" ]; then
+          echo "ERROR: Directory does not exist: $TEMPLATE_DIR"
+          exit 1
+        fi
+
+        echo "Using path: $TEMPLATE_DIR"
+
+        # Configure packer flags
+        FLAGS=""
+
+        if [ -n "{{ .VAR_FILE }}" ]; then
+          FLAGS="$FLAGS -var-file={{ .VAR_FILE }}"
+        fi
+
+        if [ -n "{{ .ONLY }}" ]; then
+          FLAGS="$FLAGS -only={{ .ONLY }}"
+        fi
+
+        if [ -n "{{ .EXCEPT }}" ]; then
+          FLAGS="$FLAGS -except={{ .EXCEPT }}"
+        fi
+
+        if [ "{{ .FORCE }}" = "true" ] && [ "{{ .COMMAND }}" = "build" ]; then
+          FLAGS="$FLAGS -force"
+        fi
+
+        # Add any extra variables
+        if [ -n "{{ .VARS }}" ]; then
+          # Split by spaces and add each as -var
+          for var in $(echo "{{ .VARS }}" | tr ' ' '\n'); do
+            FLAGS="$FLAGS -var \"$var\""
+          done
+        fi
+
+        # Execute packer command
+        if [ -n "{{ .TEMPLATE }}" ]; then
+          TEMPLATE_PATH="${TEMPLATE_DIR}/{{ .TEMPLATE }}"
+          if [ -f "$TEMPLATE_PATH" ]; then
+            echo "Running packer {{ .COMMAND }} for template: {{ .TEMPLATE }}"
+            cd "$TEMPLATE_DIR" && eval "packer {{ .COMMAND }} $FLAGS \"{{ .TEMPLATE }}\""
+          else
+            echo "ERROR: Template does not exist: $TEMPLATE_PATH"
+            exit 1
+          fi
+        else
+          echo "Running packer {{ .COMMAND }} for all templates in directory"
+          cd "$TEMPLATE_DIR" && eval "packer {{ .COMMAND }} $FLAGS ."
+        fi
+
+  packer-init:
+    desc: "Initialize a Packer working directory"
+    deps:
+      - check-packer
+    vars:
+      TEMPLATE_DIR: '{{.TEMPLATE_DIR | default ""}}'
+      FORCE: '{{.FORCE | default ""}}'
+      UPGRADE: '{{.UPGRADE | default "true"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Build packer command
+        CMD="packer init"
+
+        # Add force flag if set
+        if [ "{{.FORCE}}" = "true" ]; then
+          CMD="$CMD -force"
+        fi
+
+        # Add upgrade flag if set
+        if [ "{{.UPGRADE}}" = "true" ]; then
+          CMD="$CMD -upgrade"
+        fi
+
+        # Add template directory
+        if [ -n "{{.TEMPLATE_DIR}}" ]; then
+          if [ ! -d "{{.TEMPLATE_DIR}}" ]; then
+            echo "ERROR: Template directory not found: {{.TEMPLATE_DIR}}"
+            exit 1
+          fi
+
+          echo "Using template directory: {{.TEMPLATE_DIR}}"
+          CMD="$CMD {{.TEMPLATE_DIR}}"
+        else
+          echo "ERROR: TEMPLATE_DIR variable is required"
+          exit 1
+        fi
+
+        # Execute the command
+        echo "Executing: $CMD"
+        eval $CMD
+
+  packer-validate:
+    desc: "Check that a template is valid"
+    vars:
+      COMMAND: validate
+    cmds:
+      - task: _packer-base
+        vars:
+          COMMAND: '{{.COMMAND}}'
+          TEMPLATE_DIR: '{{.TEMPLATE_DIR}}'
+          TEMPLATE: '{{.TEMPLATE}}'
+          VAR_FILE: '{{.VAR_FILE}}'
+
+  packer-template-build:
+    desc: "Build a template image from anywhere in the repo"
+    deps:
+      - check-packer
+    vars:
+      TEMPLATE_NAME: '{{.TEMPLATE_NAME}}'
+      TEMPLATE_DIR: '{{if .TEMPLATE_DIR}}{{.TEMPLATE_DIR}}{{else}}templates/{{.TEMPLATE_NAME}}/packer_templates{{end}}'
+      ONLY: '{{.ONLY | default ""}}'
+      VARS: '{{.VARS | default ""}}'
+    requires:
+      vars: ['TEMPLATE_NAME']
+
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Validate required variables
+        if [ -z "{{.TEMPLATE_NAME}}" ]; then
+          echo "ERROR: TEMPLATE_NAME variable is required"
+          exit 1
+        fi
+
+        # Find the template packer templates directory
+        if [ ! -d "{{.TEMPLATE_DIR}}" ]; then
+          echo "ERROR: Template packer templates directory not found: {{.TEMPLATE_DIR}}"
+          exit 1
+        fi
+
+        echo "Using template directory: {{.TEMPLATE_DIR}}"
+
+        # Build packer command
+        CMD="packer build"
+
+        if [ -n "{{.ONLY}}" ]; then
+          CMD="$CMD -only={{.ONLY}}"
+        fi
+
+        # Parse any additional variables
+        if [ -n "{{.VARS}}" ]; then
+          # Split VARS by spaces and add each as -var
+          for VAR in {{.VARS}}; do
+            CMD="$CMD -var \"$VAR\""
+          done
+        fi
+
+        # Add the template directory
+        CMD="$CMD {{.TEMPLATE_DIR}}"
+
+        # Execute the command
+        echo "Executing: $CMD"
+        eval $CMD
+
+  packer-console:
+    desc: "Creates a console for testing variable interpolation"
+    vars:
+      COMMAND: console
+    cmds:
+      - task: _packer-base
+        vars:
+          COMMAND: '{{.COMMAND}}'
+          TEMPLATE_DIR: '{{.TEMPLATE_DIR}}'
+          TEMPLATE: '{{.TEMPLATE}}'
+          VAR_FILE: '{{.VAR_FILE}}'
+
+  packer-fmt:
+    desc: "Format packer template files"
+    deps:
+      - check-packer
+    vars:
+      CHECK: '{{.CHECK | default "false"}}'
+      RECURSIVE: '{{.RECURSIVE | default "true"}}'
+      TEMPLATE_DIR: '{{.TEMPLATE_DIR | default "./"}}'
+    cmds:
+      - |
+        WORKING_DIR=$(pwd)
+        TEMPLATE_DIR="{{ .TEMPLATE_DIR }}"
+        FULL_PATH="$WORKING_DIR/$TEMPLATE_DIR"
+
+        cd "$FULL_PATH"
+
+        FLAGS=""
+        if [ "{{ .CHECK }}" = "true" ]; then
+          FLAGS="$FLAGS -check"
+        fi
+
+        if [ "{{ .RECURSIVE }}" = "true" ]; then
+          FLAGS="$FLAGS -recursive"
+        fi
+
+        packer fmt $FLAGS .
+    silent: true
+
+  packer-inspect:
+    desc: "Inspect a template"
+    deps:
+      - check-packer
+    vars:
+      TEMPLATE_DIR: '{{.TEMPLATE_DIR | default "./"}}'
+      TEMPLATE: '{{.TEMPLATE}}'
+    cmds:
+      - |
+        WORKING_DIR=$(pwd)
+        TEMPLATE_DIR="{{ .TEMPLATE_DIR }}"
+        FULL_PATH="$WORKING_DIR/$TEMPLATE_DIR"
+
+        if [ -n "{{ .TEMPLATE }}" ]; then
+          TEMPLATE_PATH="${FULL_PATH}/{{ .TEMPLATE }}"
+          if [ -f "$TEMPLATE_PATH" ]; then
+            cd "$FULL_PATH" && packer inspect "{{ .TEMPLATE }}"
+          else
+            echo "ERROR: Template does not exist: $TEMPLATE_PATH"
+            exit 1
+          fi
+        else
+          echo "ERROR: TEMPLATE variable is required"
+          exit 1
+        fi
+    silent: true
+
+  validate:
+    desc: "Run packer validate to ensure configuration is syntactically correct"
+    deps:
+      - check-packer
+    cmds:
+      - |
+        find . -type f -name "*.pkr.hcl" -exec dirname {} \; | uniq | while read dir; do
+          echo "Validating templates in $dir"
+          (cd "$dir" && packer validate .)
+        done
+
+  format:
+    desc: "Format packer code"
+    deps:
+      - check-packer
+    cmds:
+      - |
+        packer fmt -recursive .
+
+  packer-hcl2-upgrade:
+    desc: "Upgrade JSON templates to HCL format"
+    deps:
+      - check-packer
+    vars:
+      JSON_TEMPLATE: '{{.JSON_TEMPLATE}}'
+      OUTPUT_DIR: '{{.OUTPUT_DIR | default "./hcl-templates"}}'
+    cmds:
+      - |
+        if [ -z "{{ .JSON_TEMPLATE }}" ]; then
+          echo "ERROR: JSON_TEMPLATE variable is required"
+          exit 1
+        fi
+
+        if [ ! -f "{{ .JSON_TEMPLATE }}" ]; then
+          echo "ERROR: Template does not exist: {{ .JSON_TEMPLATE }}"
+          exit 1
+        fi
+
+        # Create output directory if it doesn't exist
+        mkdir -p "{{ .OUTPUT_DIR }}"
+
+        # Run the upgrade command
+        packer hcl2_upgrade -output-file="{{ .OUTPUT_DIR }}/$(basename "{{ .JSON_TEMPLATE }}" .json).pkr.hcl" "{{ .JSON_TEMPLATE }}"
+    silent: true
+
+  packer-plugin-install:
+    desc: "Install a Packer plugin"
+    deps:
+      - check-packer
+    vars:
+      PLUGIN_NAME: '{{.PLUGIN_NAME}}'
+      PLUGIN_VERSION: '{{.PLUGIN_VERSION | default "latest"}}'
+    cmds:
+      - |
+        if [ -z "{{ .PLUGIN_NAME }}" ]; then
+          echo "ERROR: PLUGIN_NAME variable is required"
+          exit 1
+        fi
+
+        packer plugins install "{{ .PLUGIN_NAME }}" -version "{{ .PLUGIN_VERSION }}"
+    silent: true
+
+  packer-plugin-list:
+    desc: "List installed Packer plugins"
+    deps:
+      - check-packer
+    cmds:
+      - |
+        packer plugins installed
+    silent: true

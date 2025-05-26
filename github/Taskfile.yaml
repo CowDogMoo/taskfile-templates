@@ -1,0 +1,327 @@
+---
+version: "3"
+
+tasks:
+  add-git-submodules:
+    desc: "Add submodules from GitHub based on a naming pattern"
+    silent: true
+    cmds:
+      - |
+        # Create the target directory if it doesn't exist
+        if [ -n "{{.TARGET_DIR}}" ]; then
+          mkdir -p "{{.TARGET_DIR}}"
+        fi
+
+        # Clean up any existing repositories that may cause conflicts
+        if [ -n "{{.REGEXP}}" ]; then
+          for repo in $(ls "{{.TARGET_DIR}}" | grep '{{.REGEXP}}'); do
+            if [ -d "{{.TARGET_DIR}}/$repo" ]; then
+              rm -rf "{{.TARGET_DIR}}/$repo"
+            fi
+          done
+        fi
+
+        # Get the repository URL
+        repo_url=$(gh repo view "{{.ORG}}/{{.REGEXP}}" --json url -q .url)
+        if [ -n "$repo_url" ]; then
+          echo "Adding submodule from: $repo_url"
+          git submodule add "$repo_url" "{{.TARGET_DIR}}/{{.REGEXP}}"
+        else
+          echo "Error: Repository not found"
+          exit 1
+        fi
+
+        # Update and sync submodules
+        git submodule update --init --recursive
+        git submodule sync --recursive
+    requires:
+      vars: ['ORG', 'REGEXP', 'TARGET_DIR']
+
+  create-release:
+    desc: "Create a release on GitHub"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Check if NEXT_VERSION is set
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+
+        # Create GitHub release
+        echo "Creating release $NEXT_VERSION"
+        gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
+    requires:
+      vars: ['NEXT_VERSION']
+
+  remove-git-submodules:
+    desc: "Remove one or more submodules and clean up related files"
+    silent: true
+    cmds:
+      - |
+        # Set variables
+        submodule_path="{{.TARGET_DIR}}/{{.REGEXP}}"
+
+        # Find matching submodules
+        matching_submodules=$(git config --file .gitmodules --get-regexp path | grep "{{.REGEXP}}" | cut -d ' ' -f2 || true)
+
+        if [ -z "$matching_submodules" ]; then
+          echo "No matching submodules found for pattern: {{.REGEXP}}"
+          exit 0
+        fi
+
+        echo "Found matching submodules:"
+        echo "$matching_submodules"
+        echo "Proceeding with removal..."
+
+        for submodule in $matching_submodules; do
+          echo "Removing submodule: $submodule"
+
+          # Stage 1: Deinitialize the submodule
+          echo "Deinitializing submodule..."
+          git submodule deinit -f "$submodule" || {
+            echo "Warning: Failed to deinitialize $submodule, continuing anyway..."
+          }
+
+          # Stage 2: Remove the submodule entry from .git/config
+          git config --remove-section "submodule.$submodule" 2>/dev/null || true
+
+          # Stage 3: Remove the submodule from the working tree and .git/modules
+          echo "Removing from git..."
+          git rm -f "$submodule" || {
+            echo "Warning: Failed to git rm $submodule, trying manual removal..."
+            rm -rf "$submodule"
+          }
+
+          # Stage 4: Clean up .git/modules
+          echo "Cleaning up .git/modules..."
+          rm -rf ".git/modules/$submodule"
+
+          # Stage 5: Remove from .gitmodules file
+          echo "Updating .gitmodules..."
+          if git config -f .gitmodules --get-regexp "submodule\.$submodule" > /dev/null 2>&1; then
+            git config -f .gitmodules --remove-section "submodule.$submodule"
+            git add .gitmodules
+          fi
+        done
+
+        # Final cleanup and commit
+        echo "Performing final cleanup..."
+        git submodule sync --recursive
+
+        # Check if there are changes to commit
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "Committing changes..."
+          git commit -m "refactor: Remove submodules matching pattern {{.REGEXP}}" || true
+        fi
+
+        echo "Submodule removal complete"
+    requires:
+      vars: ['TARGET_DIR', 'REGEXP']
+
+  check-gh-cli:
+    desc: "Validate that the GitHub CLI (gh) is installed"
+    cmds:
+      - |
+        if ! command -v gh &> /dev/null; then
+          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
+          exit 1
+        fi
+    silent: true
+
+  merge-pull-requests:
+    desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Fetch all open pull requests with required information
+        echo "Fetching open pull requests..."
+        raw_prs=$(gh pr list --state open --json number,statusCheckRollup,mergeable,headRefName)
+        echo "Raw PR data: $raw_prs"
+
+        # Process PRs with successful checks and handle conflicts
+        echo "$raw_prs" | jq -r '.[] | select(.statusCheckRollup != null) |
+          {
+            number: .number,
+            headRefName: .headRefName,
+            mergeable: .mergeable,
+            totalChecks: (.statusCheckRollup | length),
+            passingChecks: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length),
+            checksPass: (.statusCheckRollup | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
+          } |
+          @json' | while read -r pr_info; do
+
+          pr_number=$(echo "$pr_info" | jq -r '.number')
+          branch_name=$(echo "$pr_info" | jq -r '.headRefName')
+          mergeable=$(echo "$pr_info" | jq -r '.mergeable')
+          total_checks=$(echo "$pr_info" | jq -r '.totalChecks')
+          passing_checks=$(echo "$pr_info" | jq -r '.passingChecks')
+          checks_pass=$(echo "$pr_info" | jq -r '.checksPass')
+
+          echo "Processing PR #$pr_number (Branch: $branch_name)"
+          echo "Mergeable status: $mergeable"
+          echo "Checks status: $passing_checks of $total_checks passing"
+
+          # Check if PR is mergeable AND all checks pass
+          if [ "$checks_pass" = "true" ] && [ "$mergeable" = "MERGEABLE" ]; then
+            echo "Attempting to squash and merge PR #$pr_number..."
+            if gh pr merge "$pr_number" --squash --delete-branch --auto; then
+              echo "Successfully merged PR #$pr_number"
+            else
+              echo "Failed to merge PR #$pr_number despite being marked as mergeable"
+            fi
+          else
+            # Either has conflicts or failing checks, so close it
+            echo "PR #$pr_number has failing checks ($passing_checks of $total_checks passing) or conflicts. Closing PR..."
+            if gh pr close "$pr_number" --delete-branch; then
+              echo "Successfully closed PR #$pr_number and deleted branch $branch_name"
+            else
+              echo "Failed to close PR #$pr_number"
+            fi
+          fi
+        done
+
+        echo "Completed processing all pull requests"
+    requires:
+      vars: []
+
+  create-release-with-notes:
+    desc: "Create a release on GitHub with automatically generated release notes"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Check if NEXT_VERSION is set
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+
+        # Create GitHub release with auto-generated notes
+        echo "Creating release $NEXT_VERSION with generated notes"
+        gh release create "$NEXT_VERSION" --generate-notes
+    requires:
+      vars: ['NEXT_VERSION']
+
+  diff-changes:
+    desc: "Show git diff excluding specified patterns (comma-separated)"
+    cmds:
+      - |
+        # Disable pagination for empty diffs
+        export GIT_PAGER='less -F -X'
+
+        if [ -n "{{.EXCLUDES}}" ]; then
+          command="git diff {{.BASE_BRANCH}} --"
+
+          # Process each pattern and add it to the command
+          echo "{{.EXCLUDES}}" | tr ',' '\n' | while read -r pattern; do
+            # Trim whitespace from pattern
+            pattern=$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -n "$pattern" ]; then
+              command="$command \":(exclude)$pattern\""
+            fi
+          done
+
+          # Capture the output of the git diff command
+          output=$(eval "$command")
+
+          # Check if there's any output
+          if [ -z "$output" ]; then
+            echo "No changes found when excluding patterns: {{.EXCLUDES}}"
+          else
+            echo "$output"
+          fi
+        else
+          # Capture output for regular diff
+          output=$(git diff {{.BASE_BRANCH}})
+          if [ -z "$output" ]; then
+            echo "No changes found in diff with {{.BASE_BRANCH}}"
+          else
+            echo "$output"
+          fi
+        fi
+    requires:
+      vars: ['BASE_BRANCH']
+    silent: true
+
+  sync-submodules:
+    desc: "Initialize and update submodules idempotently"
+    cmds:
+      - |
+        echo "Synchronizing all submodules..."
+
+        # STEP 0: Ensure submodules are initialized before running any 'foreach' or update
+        git submodule update --init --recursive
+
+        # Check if any submodules exist in .gitmodules
+        if [ ! -f .gitmodules ] || [ ! -s .gitmodules ]; then
+          echo "No submodules defined in this repository. Nothing to synchronize."
+          exit 0
+        fi
+
+        # Step 1: Fix any detached HEAD in submodules by checking out proper branch
+        echo "Ensuring submodules are on the correct branch..."
+        git submodule foreach '
+          # Get the branch submodule is supposed to track from .gitmodules
+          configured_branch=$(git config -f $toplevel/.gitmodules submodule.$name.branch)
+
+          if [ -n "$configured_branch" ]; then
+            branch="$configured_branch"
+          else
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              branch="main"
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+              branch="master"
+            else
+              remote_head=$(git remote show origin | grep "HEAD branch" | sed "s/.*: //")
+              if [ -n "$remote_head" ]; then
+                branch="$remote_head"
+              else
+                echo "[$name] Could not determine default branch, using main"
+                branch="main"
+              fi
+            fi
+          fi
+
+          if git symbolic-ref -q HEAD >/dev/null; then
+            echo "[$name] Already on a branch"
+          else
+            echo "[$name] Currently in detached HEAD state, checking out $branch branch"
+            git checkout $branch || git checkout -b $branch || echo "[$name] Failed to checkout branch"
+          fi
+        '
+
+        # Step 2: Pull latest changes in each submodule if it's on a branch
+        echo "Pulling latest changes for each submodule..."
+        git submodule foreach '
+          if git symbolic-ref -q HEAD >/dev/null; then
+            git pull --ff-only origin $(git symbolic-ref --short HEAD) || echo "[$name] Failed to pull latest changes"
+          else
+            echo "[$name] Not on a branch, skipping pull"
+          fi
+        '
+
+        # Step 3: Final sync to ensure .git/config is up-to-date
+        git submodule sync --recursive
+
+        echo "All submodules have been successfully synchronized."
+
+  pull-git-repos:
+    desc: "Pull updates for all git repositories in the current directory"
+    silent: true
+    cmds:
+      - |
+        find . -maxdepth 1 -type d ! -name ".git" -exec sh -c '
+          cd "{}" &&
+          echo "Processing: {}" &&
+          branch=$(git branch --show-current 2>/dev/null) &&
+          if [ -z "$branch" ]; then
+            echo "Failed in {}: Not on a branch. Skipping."
+          elif ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Failed in {}: Uncommitted or unstaged changes. Skipping."
+          else
+            git pull || echo "Failed in {}: Git pull failed."
+          fi
+        ' \;

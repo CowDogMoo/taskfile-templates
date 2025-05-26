@@ -1,0 +1,156 @@
+---
+version: "3"
+
+tasks:
+  changelog-lint:
+    desc: "Lint the changelog"
+    cmds:
+      - antsibull-changelog lint
+
+  changelog-release:
+    desc: "Generate the changelog release"
+    deps: [update-galaxy-version]
+    cmds:
+      - antsibull-changelog release --version $NEXT_VERSION
+
+  check-ansible:
+    desc: "Validate that Ansible is installed (for Ansible provisioners)"
+    cmds:
+      - |
+        if ! command -v ansible &> /dev/null; then
+          echo "'ansible' command not found. Please install Ansible: https://docs.ansible.com/ansible/latest/installation_guide/"
+          exit 1
+        fi
+    silent: true
+
+  gen-changelog:
+    desc: "Generate the changelog for the next release"
+    cmds:
+      - |
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
+          exit 1
+        fi
+      - echo "Generating changelog for release $NEXT_VERSION"
+      - task: changelog-lint
+      - task: changelog-release
+
+  lint-ansible:
+    desc: "Run Ansible Lint"
+    cmds:
+      - |
+        echo "Running ansible-lint."
+        ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
+    silent: true
+
+  ping:
+    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows, Linux, and macOS hosts."
+    vars:
+      INVENTORY: '{{.INVENTORY}}'
+      HOSTS:     '{{.HOSTS | default "all"}}'
+      DEBUG:     '{{.DEBUG | default "false"}}'
+      OS_TYPE:   '{{.OS_TYPE | default "auto"}}'
+    cmds:
+      - |
+        #— explicit OS_TYPE shortcuts
+        if [ "{{.OS_TYPE}}" = "windows" ]; then
+          echo "Using win_ping module for {{.HOSTS}} (OS_TYPE=windows)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
+          exit $?
+        elif [ "{{.OS_TYPE}}" = "linux" ]; then
+          echo "Using ping module for {{.HOSTS}} (OS_TYPE=linux)"
+          {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+            ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
+          exit $?
+        fi
+
+        #— auto-detect: build a tiny playbook and run it
+        echo "Auto-detecting host types and pinging each…"
+
+        # try Linux-style mktemp first; if it errors, fall back to macOS -t form
+        if PLAYBOOK=$(mktemp /tmp/ping_playbook.XXXXXX.yml 2>/dev/null); then
+          :
+        else
+          PLAYBOOK=$(mktemp -t ping_playbook).yml
+        fi
+
+        cat > "$PLAYBOOK" << 'EOF'
+        ---
+        - hosts: {{.HOSTS}}
+          gather_facts: yes
+          tasks:
+            - name: Ping Windows hosts
+              win_ping:
+              when: ansible_facts.os_family == 'Windows'
+
+            - name: Ping macOS hosts
+              ping:
+              when: ansible_facts['system'] == 'Darwin'
+
+            - name: Ping Linux hosts
+              ping:
+              when: ansible_facts['system'] == 'Linux'
+        EOF
+
+        echo "===== PING RESULTS ====="
+        {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
+          ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK"
+        RET=$?
+
+        rm -f "$PLAYBOOK"
+        exit $RET
+    silent: false
+
+  run-molecule-action:
+    desc: "Run GitHub Actions molecule workflow using act. Optionally specify ROLE or PLAYBOOK"
+    vars:
+      ROLE: '{{.ROLE | default ""}}'
+      PLAYBOOK: '{{.PLAYBOOK | default ""}}'
+      IS_MAC_ARM: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}true{{else}}false{{end}}'
+      ARCH_FLAG: '{{if eq .IS_MAC_ARM "true"}}--container-architecture linux/amd64{{end}}'
+    cmds:
+      - |
+        # Clean up any existing act containers
+        docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
+        if [ -n "{{.ROLE}}" ]; then
+          echo '{"inputs":{"ROLE":"{{.ROLE}}"}}' > /tmp/github-event.json
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
+          rm /tmp/github-event.json
+        elif [ -n "{{.PLAYBOOK}}" ]; then
+          echo '{"inputs":{"PLAYBOOK":"{{.PLAYBOOK}}"}}' > /tmp/github-event.json
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
+          rm /tmp/github-event.json
+        else
+          act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}}
+        fi
+
+  run-molecule-tests:
+    desc: "Run Molecule tests for all roles"
+    cmds:
+      - |
+        mkdir -p logs
+        export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
+        for role in roles/*; do
+          if [[ -d "$role" ]]; then
+            echo "Running molecule tests for role $role"
+            (cd "$role" && molecule test) | tee -a logs/molecule_tests.log || exit 1
+          fi
+        done
+    silent: true
+
+  update-galaxy-version:
+    desc: "Update version in galaxy.yml if it exists"
+    cmds:
+      - |
+        if [ -z "$NEXT_VERSION" ]; then
+          echo "'NEXT_VERSION' environment variable not set."
+          exit 1
+        fi
+        if [ -f "galaxy.yml" ]; then
+          yq e -i '.version = env(NEXT_VERSION)' galaxy.yml
+          echo "Updated galaxy.yml version to $NEXT_VERSION"
+        else
+          echo "No galaxy.yml found, skipping version update"
+        fi
+    silent: true

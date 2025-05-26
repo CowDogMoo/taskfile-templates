@@ -1,0 +1,262 @@
+---
+version: "3"
+
+tasks:
+  check-terraform:
+    desc: "Validate that Terraform is installed"
+    cmds:
+      - |
+        if ! command -v terraform &> /dev/null; then
+          echo "'terraform' command not found. Please install Terraform: https://www.terraform.io/downloads.html"
+          exit 1
+        fi
+    silent: true
+
+  check-terragrunt:
+    desc: "Validate that Terragrunt is installed"
+    cmds:
+      - |
+        if ! command -v terragrunt &> /dev/null; then
+          echo "'terragrunt' command not found. Please install Terragrunt: https://terragrunt.gruntwork.io"
+          exit 1
+        fi
+    silent: true
+
+  lint:
+    desc: "Run terraform fmt check and tflint on all terraform files"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        echo "Running terraform fmt check"
+        terraform fmt -check -recursive
+        echo "Running tflint"
+        find . -type f -name "*.tf" -exec dirname {} \; | uniq | while read dir; do
+          (cd "$dir" && tflint)
+        done
+    silent: true
+
+  _terragrunt-base:
+    internal: true
+    deps:
+      - check-terraform
+      - check-terragrunt
+    vars:
+      AUTO_APPROVE: '{{.AUTO_APPROVE | default "true"}}'
+      BASE_PATH: '{{.BASE_PATH | default "./"}}'
+      COMMAND: '{{.COMMAND}}'
+      DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
+      ENV: '{{.ENV | default ""}}'
+      MODULE: '{{.MODULE | default ""}}'
+      REGION: '{{.REGION | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Check for required COMMAND variable
+        if [ -z "{{.COMMAND}}" ]; then
+          echo "ERROR: COMMAND variable is not set"
+          exit 1
+        fi
+
+        # Validate required variables
+        if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+          echo "ERROR: DEPLOYMENT, ENV, and REGION variables are required"
+          exit 1
+        fi
+
+        # Construct base path
+        WORKING_DIR=$(pwd)
+        BASE_PATH="{{ .BASE_PATH }}"
+        FULL_PATH="$WORKING_DIR/$BASE_PATH/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        if [ ! -d "$FULL_PATH" ]; then
+          echo "ERROR: Directory does not exist: $FULL_PATH"
+          exit 1
+        fi
+
+        echo "Using path: $FULL_PATH"
+
+        # Configure terragrunt flags
+        FLAGS="--non-interactive -lock=false"
+
+        # Only add -auto-approve for apply and destroy commands
+        if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && ( [ "{{.COMMAND}}" = "apply" ] || [ "{{.COMMAND}}" = "destroy" ] ); then
+          FLAGS="$FLAGS -auto-approve"
+        fi
+
+        if [ "{{.COMMAND}}" = "init" ]; then
+          FLAGS="$FLAGS -upgrade"
+        fi
+
+        # Execute terragrunt command
+        if [ -n "{{ .MODULE }}" ]; then
+          echo "Running terragrunt {{.COMMAND}} for module: {{.MODULE}}"
+          if [ "{{.COMMAND}}" = "destroy" ]; then
+            terragrunt run-all {{.COMMAND}} $FLAGS \
+              --working-dir "$FULL_PATH/{{.MODULE}}"
+          else
+            terragrunt {{.COMMAND}} $FLAGS \
+              --working-dir "$FULL_PATH/{{.MODULE}}"
+          fi
+        else
+          echo "Running terragrunt run-all {{.COMMAND}} for all modules"
+          terragrunt run-all {{.COMMAND}} $FLAGS \
+            --working-dir "$FULL_PATH"
+        fi
+
+  terragrunt-init:
+    desc: "Initialize a specific module in a given environment using Terragrunt"
+    vars:
+      COMMAND: init
+    cmds:
+      - task: _terragrunt-base
+        vars:
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
+          COMMAND: '{{.COMMAND}}'
+          DEPLOYMENT: '{{.DEPLOYMENT}}'
+          ENV: '{{.ENV}}'
+          REGION: '{{.REGION}}'
+          MODULE: '{{.MODULE}}'
+
+  terragrunt-plan:
+    desc: "Plan changes to a specific module in a given environment using Terragrunt"
+    vars:
+      COMMAND: plan
+    cmds:
+      - task: _terragrunt-base
+        vars:
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
+          COMMAND: '{{.COMMAND}}'
+          DEPLOYMENT: '{{.DEPLOYMENT}}'
+          ENV: '{{.ENV}}'
+          REGION: '{{.REGION}}'
+          MODULE: '{{.MODULE}}'
+
+  terragrunt-apply:
+    desc: "Apply a specific module in a given environment using Terragrunt"
+    vars:
+      COMMAND: apply
+    cmds:
+      - task: _terragrunt-base
+        vars:
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
+          COMMAND: '{{.COMMAND}}'
+          DEPLOYMENT: '{{.DEPLOYMENT}}'
+          ENV: '{{.ENV}}'
+          REGION: '{{.REGION}}'
+          MODULE: '{{.MODULE}}'
+
+  terragrunt-destroy:
+    desc: "Destroy a specific module in a given environment using Terragrunt"
+    vars:
+      COMMAND: destroy
+    cmds:
+      - task: _terragrunt-base
+        vars:
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          BASE_PATH: '{{.BASE_PATH}}'
+          COMMAND: '{{.COMMAND}}'
+          DEPLOYMENT: '{{.DEPLOYMENT}}'
+          ENV: '{{.ENV}}'
+          REGION: '{{.REGION}}'
+          MODULE: '{{.MODULE}}'
+
+  run-terratest:
+    desc: "Run Terratest for infrastructure testing"
+    deps:
+      - check-terraform
+    vars:
+      TIMEOUT: '{{.TIMEOUT | default "60m"}}'
+      DESTROY: '{{.DESTROY | default "true"}}'
+      VERBOSE: '{{.VERBOSE | default "false"}}'
+      LOG_TO_FILE: '{{.LOG_TO_FILE | default "false"}}'
+      LOG_PATH: '{{.LOG_PATH | default "/tmp/terratest.log"}}'
+    cmds:
+      - |
+        cd test
+        go mod tidy
+        export TERRATEST_DESTROY={{.DESTROY}}
+
+        # Set up logging based on verbosity and logging preferences
+        if [ "{{.VERBOSE}}" = "true" ]; then
+          export TF_LOG=DEBUG
+          if [ "{{.LOG_TO_FILE}}" = "true" ]; then
+            export TF_LOG_PATH=./terraform.log
+            go test -v -test.v -timeout={{.TIMEOUT}} | tee {{.LOG_PATH}}
+          else
+            go test -v -test.v -timeout={{.TIMEOUT}}
+          fi
+        else
+          if [ "{{.LOG_TO_FILE}}" = "true" ]; then
+            go test -timeout={{.TIMEOUT}} | tee {{.LOG_PATH}}
+          else
+            go test -timeout={{.TIMEOUT}}
+          fi
+        fi
+    silent: true
+
+  validate:
+    desc: "Run Terraform validate to ensure configuration is syntactically correct"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        terraform validate
+
+  format:
+    desc: "Format Terraform code"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        terraform fmt -recursive
+
+  terragrunt-state-remove-all:
+      desc: "Remove all resources from the Terraform state for a specific module"
+      deps:
+        - check-terraform
+        - check-terragrunt
+      vars:
+        BASE_PATH: '{{.BASE_PATH | default "./"}}'
+        DEPLOYMENT: '{{.DEPLOYMENT}}'
+        ENV: '{{.ENV}}'
+        MODULE: '{{.MODULE}}'
+        REGION: '{{.REGION}}'
+      cmds:
+        - |
+          set -eo pipefail
+
+          # Validate required variables
+          if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+            echo "ERROR: DEPLOYMENT, ENV, and REGION variables are required"
+            exit 1
+          fi
+
+          # Construct base path
+          WORKING_DIR=$(pwd)
+          BASE_PATH="{{ .BASE_PATH }}"
+          FULL_PATH="$WORKING_DIR/$BASE_PATH/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+          if [ ! -d "$FULL_PATH" ]; then
+            echo "ERROR: Directory does not exist: $FULL_PATH"
+            exit 1
+          fi
+
+          echo "Using path: $FULL_PATH"
+
+          if [ -n "{{ .MODULE }}" ]; then
+            echo "Removing all state resources for module: {{.MODULE}}"
+            cd "$FULL_PATH/{{.MODULE}}"
+          else
+            echo "Removing all state resources from root module"
+            cd "$FULL_PATH"
+          fi
+
+          # List all resources and remove them one by one
+          terragrunt state list | sed 's/"/\\"/g' | xargs -I {} terragrunt state rm "{}"
+
+      silent: true

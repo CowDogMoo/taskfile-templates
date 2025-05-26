@@ -20,10 +20,21 @@
   },
   "packageRules": [
     {
-      "description": "Auto merge GitHub Actions",
+      "description": "Auto merge GitHub Actions minor and patch updates",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "matchUpdateTypes": ["minor", "patch"],
       "automerge": true,
       "automergeType": "branch",
       "matchUpdateTypes": ["digest"]
     },
+    {
+      "description": "Auto merge non-major updates for other dependencies",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue",
+      "matchManagers": ["pre-commit", "regex"]
+    }
   ]
 }

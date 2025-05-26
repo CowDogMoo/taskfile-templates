@@ -1,0 +1,131 @@
+---
+version: "3"
+
+tasks:
+  check-docker:
+    desc: "Validate that Docker is installed and running"
+    cmds:
+      - |
+        if ! command -v docker &> /dev/null; then
+          echo "Docker is not installed. Please install Docker to continue."
+          exit 1
+        fi
+        if ! docker info &> /dev/null; then
+          echo "Docker daemon is not running. Please start Docker to continue."
+          exit 1
+        fi
+    silent: true
+
+  list-docker-mounts:
+    desc: "List all Docker containers with their mount points"
+    cmds:
+      - |
+        # Get all container IDs
+        CONTAINER_IDS=$(docker ps -a --format '{{ "{{" }} .ID {{ "}}" }}')
+
+        if [ -z "$CONTAINER_IDS" ]; then
+          echo "No containers found"
+          exit 0
+        fi
+
+        # Iterate through each container and display its mounts
+        echo "Listing all containers with their mount points:"
+        echo "----------------------------------------------"
+
+        for CONTAINER_ID in $CONTAINER_IDS; do
+          docker inspect -f '{{ "{{" }} .Name {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}{{ "{{" }} range .Mounts {{ "}}" }}{{ "{{" }} printf "\n\t" {{ "}}" }}{{ "{{" }} .Type {{ "}}" }} {{ "{{" }} if eq .Type "bind" {{ "}}" }}{{ "{{" }} .Source {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} .Name {{ "}}" }} => {{ "{{" }} .Destination {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}' $CONTAINER_ID
+        done
+
+  list-container-mounts:
+    desc: "List mount points for a specific container"
+    vars:
+      CONTAINER: '{{ .CONTAINER | default "" }}'
+    cmds:
+      - |
+        if [ -z "{{ .CONTAINER }}" ]; then
+          echo "Error: Container name or ID not provided"
+          echo "Usage: task list-container-mounts CONTAINER=container_name_or_id"
+          exit 1
+        fi
+
+        if ! docker inspect {{ .CONTAINER }} >/dev/null 2>&1; then
+          echo "Error: Container '{{ .CONTAINER }}' not found"
+          exit 1
+        fi
+
+        echo "Listing mount points for container '{{ .CONTAINER }}':"
+        echo "------------------------------------------------------"
+        docker inspect -f '{{ "{{" }} .Name {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}{{ "{{" }} range .Mounts {{ "}}" }}{{ "{{" }} printf "\n\t" {{ "}}" }}{{ "{{" }} .Type {{ "}}" }} {{ "{{" }} if eq .Type "bind" {{ "}}" }}{{ "{{" }} .Source {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} .Name {{ "}}" }} => {{ "{{" }} .Destination {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} printf "\n" {{ "}}" }}' {{ .CONTAINER }}
+
+  push-multi-arch:
+    desc: "Push multi-architecture Docker images to a registry"
+    deps: [check-docker]
+    requires:
+      vars: ['NAMESPACE', 'IMAGE_NAME', 'ARM64_HASH', 'AMD64_HASH', 'GITHUB_TOKEN', 'GITHUB_USER']
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: '{{ .NAMESPACE }}'
+      IMAGE_NAME: '{{ .IMAGE_NAME }}'
+      TAG: '{{ .TAG | default "latest" }}'
+      ARM64_HASH: '{{ .ARM64_HASH }}'
+      AMD64_HASH: '{{ .AMD64_HASH }}'
+      GITHUB_TOKEN: '{{ .GITHUB_TOKEN }}'
+      GITHUB_USER: '{{ .GITHUB_USER }}'
+    cmds:
+      - |
+        # Set variables for the full image references
+        FULL_IMAGE="{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}"
+        ARM64_IMAGE="${FULL_IMAGE}:arm64"
+        AMD64_IMAGE="${FULL_IMAGE}:amd64"
+        MANIFEST_IMAGE="${FULL_IMAGE}:{{ .TAG }}"
+
+        echo "Pushing multi-architecture images for ${FULL_IMAGE}"
+
+        # First authenticate (only if not already authenticated)
+        if ! docker info | grep -q "Username: {{ .GITHUB_USER }}"; then
+          echo "Authenticating to {{ .REGISTRY }}..."
+          echo {{ .GITHUB_TOKEN }} | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+        else
+          echo "Already authenticated to Docker registry"
+        fi
+
+        # Check if ARM64 image exists remotely before pushing
+        ARM64_EXISTS=false
+        if docker manifest inspect ${ARM64_IMAGE} >/dev/null 2>&1; then
+          echo "ARM64 image already exists in registry, skipping push"
+          ARM64_EXISTS=true
+        else
+          # Tag the ARM64 image
+          echo "Tagging ARM64 image..."
+          docker tag {{ .ARM64_HASH }} ${ARM64_IMAGE}
+
+          # Push the ARM64 image
+          echo "Pushing ARM64 image..."
+          docker push ${ARM64_IMAGE}
+        fi
+
+        # Check if AMD64 image exists remotely before pushing
+        AMD64_EXISTS=false
+        if docker manifest inspect ${AMD64_IMAGE} >/dev/null 2>&1; then
+          echo "AMD64 image already exists in registry, skipping push"
+          AMD64_EXISTS=true
+        else
+          # Tag the AMD64 image
+          echo "Tagging AMD64 image..."
+          docker tag {{ .AMD64_HASH }} ${AMD64_IMAGE}
+
+          # Push the AMD64 image
+          echo "Pushing AMD64 image..."
+          docker push ${AMD64_IMAGE}
+        fi
+
+        # Create and push the multi-architecture manifest
+        echo "Creating multi-architecture manifest..."
+        docker manifest create --amend ${MANIFEST_IMAGE} \
+          ${ARM64_IMAGE} \
+          ${AMD64_IMAGE}
+
+        echo "Pushing multi-architecture manifest..."
+        docker manifest push ${MANIFEST_IMAGE}
+
+        echo "Multi-architecture image successfully pushed to ${MANIFEST_IMAGE}"
