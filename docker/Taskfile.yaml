@@ -84,7 +84,7 @@ tasks:
         # First authenticate (only if not already authenticated)
         if ! docker info | grep -q "Username: {{ .GITHUB_USER }}"; then
           echo "Authenticating to {{ .REGISTRY }}..."
-          echo {{ .GITHUB_TOKEN }} | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+          echo "{{ .GITHUB_TOKEN }}" | docker login "{{ .REGISTRY }}" -u "{{ .GITHUB_USER }}" --password-stdin
         else
           echo "Already authenticated to Docker registry"
         fi
