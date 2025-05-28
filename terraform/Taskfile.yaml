@@ -93,23 +93,24 @@ tasks:
         # Execute terragrunt command
         if [ -n "{{ .MODULE }}" ]; then
           echo "Running terragrunt {{.COMMAND}} for module: {{.MODULE}}"
-          if [[ "{{ .MODULE }}" == *"*"* ]]; then
-            # If MODULE contains a wildcard, use run-all with include-dir
-            echo "Using pattern matching for modules"
-            terragrunt run-all {{.COMMAND}} $FLAGS \
-              --terragrunt-include-dir "$FULL_PATH/{{ .MODULE }}" \
-              --terragrunt-working-dir "$FULL_PATH"
+
+          # Check if the module path is a directory that contains subdirectories with terragrunt.hcl files
+          if [ -d "$FULL_PATH/{{.MODULE}}" ] && find "$FULL_PATH/{{.MODULE}}" -name "terragrunt.hcl" -type f | grep -q .; then
+            # If it's a directory with terragrunt.hcl files in subdirectories, use run-all
+            echo "Module is a directory containing Terragrunt modules, using run-all"
+            cd "$FULL_PATH/{{.MODULE}}"
+            terragrunt run-all {{.COMMAND}} $FLAGS
           elif [ "{{.COMMAND}}" = "destroy" ]; then
             terragrunt run-all {{.COMMAND}} $FLAGS \
-              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
+              --working-dir "$FULL_PATH/{{.MODULE}}"
           else
             terragrunt {{.COMMAND}} $FLAGS \
-              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
+              --working-dir "$FULL_PATH/{{.MODULE}}"
           fi
         else
           echo "Running terragrunt run-all {{.COMMAND}} for all modules"
           terragrunt run-all {{.COMMAND}} $FLAGS \
-            --terragrunt-working-dir "$FULL_PATH"
+            --working-dir "$FULL_PATH"
         fi
 
   terragrunt-init:
