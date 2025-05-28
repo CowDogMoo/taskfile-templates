@@ -1,4 +1,5 @@
 ---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 includes:
   docker: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
