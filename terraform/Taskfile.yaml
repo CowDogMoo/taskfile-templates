@@ -93,17 +93,23 @@ tasks:
         # Execute terragrunt command
         if [ -n "{{ .MODULE }}" ]; then
           echo "Running terragrunt {{.COMMAND}} for module: {{.MODULE}}"
-          if [ "{{.COMMAND}}" = "destroy" ]; then
+          if [[ "{{ .MODULE }}" == *"*"* ]]; then
+            # If MODULE contains a wildcard, use run-all with include-dir
+            echo "Using pattern matching for modules"
             terragrunt run-all {{.COMMAND}} $FLAGS \
-              --working-dir "$FULL_PATH/{{.MODULE}}"
+              --terragrunt-include-dir "$FULL_PATH/{{ .MODULE }}" \
+              --terragrunt-working-dir "$FULL_PATH"
+          elif [ "{{.COMMAND}}" = "destroy" ]; then
+            terragrunt run-all {{.COMMAND}} $FLAGS \
+              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
           else
             terragrunt {{.COMMAND}} $FLAGS \
-              --working-dir "$FULL_PATH/{{.MODULE}}"
+              --terragrunt-working-dir "$FULL_PATH/{{.MODULE}}"
           fi
         else
           echo "Running terragrunt run-all {{.COMMAND}} for all modules"
           terragrunt run-all {{.COMMAND}} $FLAGS \
-            --working-dir "$FULL_PATH"
+            --terragrunt-working-dir "$FULL_PATH"
         fi
 
   terragrunt-init:
