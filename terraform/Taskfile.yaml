@@ -96,20 +96,20 @@ tasks:
 
           # Check if the module path is a directory that contains subdirectories with terragrunt.hcl files
           if [ -d "$FULL_PATH/{{.MODULE}}" ] && find "$FULL_PATH/{{.MODULE}}" -name "terragrunt.hcl" -type f | grep -q .; then
-            # If it's a directory with terragrunt.hcl files in subdirectories, use run-all
-            echo "Module is a directory containing Terragrunt modules, using run-all"
+            # If it's a directory with terragrunt.hcl files in subdirectories, use --all
+            echo "Module is a directory containing Terragrunt modules, using --all"
             cd "$FULL_PATH/{{.MODULE}}"
-            terragrunt run-all {{.COMMAND}} $FLAGS
+            terragrunt {{.COMMAND}} $FLAGS --all
           elif [ "{{.COMMAND}}" = "destroy" ]; then
-            terragrunt run-all {{.COMMAND}} $FLAGS \
+            terragrunt {{.COMMAND}} $FLAGS --all \
               --working-dir "$FULL_PATH/{{.MODULE}}"
           else
             terragrunt {{.COMMAND}} $FLAGS \
               --working-dir "$FULL_PATH/{{.MODULE}}"
           fi
         else
-          echo "Running terragrunt run-all {{.COMMAND}} for all modules"
-          terragrunt run-all {{.COMMAND}} $FLAGS \
+          echo "Running terragrunt {{.COMMAND}} --all for all modules"
+          terragrunt {{.COMMAND}} $FLAGS --all \
             --working-dir "$FULL_PATH"
         fi
 
