@@ -3,6 +3,11 @@
 version: "3"
 
 tasks:
+  install-pc-hooks:
+    desc: "Install pre-commit hooks"
+    cmds:
+      - pre-commit install
+
   clear-cache:
     desc: "Clear pre-commit cache"
     cmds:
@@ -15,6 +20,8 @@ tasks:
 
   run-pre-commit:
     desc: "Update, clear cache, and run pre-commit hooks"
+    deps:
+      - install-pc-hooks
     cmds:
       - task: update-hooks
       - task: clear-cache
