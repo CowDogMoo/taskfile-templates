@@ -177,6 +177,7 @@ tasks:
     desc: "Run Terratest for infrastructure testing"
     deps:
       - check-terraform
+      - terraform-init
     vars:
       TIMEOUT: '{{.TIMEOUT | default "60m"}}'
       DESTROY: '{{.DESTROY | default "true"}}'
@@ -268,3 +269,58 @@ tasks:
           terragrunt state list | sed 's/"/\\"/g' | xargs -I {} terragrunt state rm "{}"
 
       silent: true
+
+  terraform-init:
+    desc: "Initialize a specific module in a given environment using Terraform"
+    deps:
+      - check-terraform
+    vars:
+      BASE_PATH: '{{.BASE_PATH | default "./"}}'
+      DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
+      ENV: '{{.ENV | default ""}}'
+      MODULE: '{{.MODULE | default ""}}'
+      REGION: '{{.REGION | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Validate required variables
+        if [ -z "{{ .DEPLOYMENT }}" ] || [ -z "{{ .ENV }}" ] || [ -z "{{ .REGION }}" ]; then
+          echo "ERROR: DEPLOYMENT, ENV, and REGION variables are required"
+          exit 1
+        fi
+
+        # Construct base path
+        WORKING_DIR=$(pwd)
+        BASE_PATH="{{ .BASE_PATH }}"
+        FULL_PATH="$WORKING_DIR/$BASE_PATH/{{ .DEPLOYMENT }}/{{ .ENV }}/{{ .REGION }}"
+
+        if [ ! -d "$FULL_PATH" ]; then
+          echo "ERROR: Directory does not exist: $FULL_PATH"
+          exit 1
+        fi
+
+        echo "Using path: $FULL_PATH"
+
+        # Configure terraform init flags
+        FLAGS="-upgrade"
+
+        # Execute terraform init command
+        if [ -n "{{ .MODULE }}" ]; then
+          echo "Running terraform init for module: {{.MODULE}}"
+
+          MODULE_PATH="$FULL_PATH/{{.MODULE}}"
+
+          if [ ! -d "$MODULE_PATH" ]; then
+            echo "ERROR: Module directory does not exist: $MODULE_PATH"
+            exit 1
+          fi
+
+          cd "$MODULE_PATH"
+          terraform init $FLAGS
+        else
+          echo "Running terraform init in root directory"
+          cd "$FULL_PATH"
+          terraform init $FLAGS
+        fi
+    silent: true
