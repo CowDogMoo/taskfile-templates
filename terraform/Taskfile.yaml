@@ -49,7 +49,7 @@ tasks:
       DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
       ENV: '{{.ENV | default ""}}'
       MODULE: '{{.MODULE | default ""}}'
-      REGION: '{{.REGION | default ""}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION")}}'
     cmds:
       - |
         set -euo pipefail
@@ -234,7 +234,7 @@ tasks:
         DEPLOYMENT: '{{.DEPLOYMENT}}'
         ENV: '{{.ENV}}'
         MODULE: '{{.MODULE}}'
-        REGION: '{{.REGION}}'
+        REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION")}}'
       cmds:
         - |
           set -eo pipefail
@@ -279,7 +279,7 @@ tasks:
       DEPLOYMENT: '{{.DEPLOYMENT | default ""}}'
       ENV: '{{.ENV | default ""}}'
       MODULE: '{{.MODULE | default ""}}'
-      REGION: '{{.REGION | default ""}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION")}}'
     cmds:
       - |
         set -euo pipefail
