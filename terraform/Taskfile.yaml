@@ -178,9 +178,7 @@ tasks:
     deps:
       - check-terraform
     cmds:
-      - |
-        cd test
-        terraform init -upgrade
+      - terraform init -upgrade
     silent: true
 
   run-terratest:
