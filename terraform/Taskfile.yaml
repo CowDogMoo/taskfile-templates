@@ -173,11 +173,21 @@ tasks:
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
 
+  terratest-init:
+    desc: "Simple terraform init for tests"
+    deps:
+      - check-terraform
+    cmds:
+      - |
+        cd test
+        terraform init -upgrade
+    silent: true
+
   run-terratest:
     desc: "Run Terratest for infrastructure testing"
     deps:
       - check-terraform
-      - terraform-init
+      - terratest-init
     vars:
       TIMEOUT: '{{.TIMEOUT | default "60m"}}'
       DESTROY: '{{.DESTROY | default "true"}}'
