@@ -17,6 +17,24 @@ tasks:
         fi
     silent: true
 
+  clean-docker:
+    desc: "Clean up Docker resources (containers, images, networks, volumes, and build cache)"
+    deps: [check-docker]
+    cmds:
+      - |
+        echo "🧹 Starting Docker cleanup..."
+        echo "📦 Removing stopped containers..."
+        docker container prune -f
+        echo "🖼️  Removing all unused images..."
+        docker image prune -af
+        echo "🌐 Removing unused networks..."
+        docker network prune -f
+        echo "💾 Removing unused volumes..."
+        docker volume prune -af
+        echo "🔨 Removing build cache..."
+        docker buildx prune -af
+        echo "✅ Docker cleanup complete!"
+
   list-docker-mounts:
     desc: "List all Docker containers with their mount points"
     cmds:

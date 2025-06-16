@@ -1,7 +1,8 @@
 # 🐳 Docker Taskfile Tasks
 
 This directory contains reusable Taskfile tasks for Docker operations,
-providing simple commands to inspect and list container mount points.
+providing simple commands to inspect container mount points, clean up Docker
+resources, and manage multi-architecture images.
 
 ## 📋 Prerequisites
 
@@ -26,40 +27,9 @@ bind mounts with their respective destinations.
 ```bash
 # List all containers with their mount information
 task list-docker-mounts
-
-# The output includes:
-# - Container names
-# - Mount types (bind, volume)
-# - Source paths (for bind mounts)
-# - Volume names (for volume mounts)
-# - Destination paths in the container
 ```
 
-### list-container-mounts
-
-Lists mount points for a specific container, allowing targeted inspection of
-volume mappings.
-
-**Variables:**
-
-- `CONTAINER`: Name or ID of the container to inspect (required)
-
-```bash
-# List mount points for a specific container by name
-task list-container-mounts CONTAINER=my-nginx
-
-# List mount points for a specific container by ID
-task list-container-mounts CONTAINER=a1b2c3d4e5f6
-
-# If container is not found, the task will:
-# - Display an error message
-# - Show usage instructions
-# - Exit with an error code
-```
-
-## 🔍 Example Output
-
-When you run `task list-docker-mounts`, you'll see output similar to:
+**Example output:**
 
 ```bash
 Listing all containers with their mount points:
@@ -78,7 +48,24 @@ Listing all containers with their mount points:
   volume redis_data => /data
 ```
 
-When you run `task list-container-mounts CONTAINER=nginx-web`:
+### list-container-mounts
+
+Lists mount points for a specific container, allowing targeted inspection of
+volume mappings.
+
+**Variables:**
+
+- `CONTAINER`: Name or ID of the container to inspect (required)
+
+```bash
+# List mount points for a specific container by name
+task list-container-mounts CONTAINER=my-nginx
+
+# List mount points for a specific container by ID
+task list-container-mounts CONTAINER=a1b2c3d4e5f6
+```
+
+**Example output:**
 
 ```bash
 Listing mount points for container 'nginx-web':
@@ -88,6 +75,108 @@ Listing mount points for container 'nginx-web':
   bind /home/user/website => /usr/share/nginx/html
   volume nginx_logs => /var/log/nginx
 ```
+
+### clean-docker 🧹
+
+Performs a comprehensive cleanup of Docker resources, removing all unused
+containers, images, networks, volumes, and build cache.
+
+```bash
+# Clean up all unused Docker resources
+task clean-docker
+```
+
+⚠️ **Warning**: This is a destructive operation that will remove:
+
+- All stopped containers
+- ALL unused images (including dangling and unreferenced images)
+- All unused networks
+- ALL unused volumes (including named volumes)
+- All build cache
+
+Make sure you have backed up any important data before running this command!
+
+**Example output:**
+
+```bash
+🧹 Starting Docker cleanup...
+📦 Removing stopped containers...
+Deleted Containers:
+a1b2c3d4e5f6
+g7h8i9j0k1l2
+
+🖼️  Removing all unused images...
+Deleted Images:
+sha256:123abc...
+sha256:456def...
+Total reclaimed space: 2.5GB
+
+🌐 Removing unused networks...
+Deleted Networks:
+old_network
+test_network
+
+💾 Removing unused volumes...
+Deleted Volumes:
+unused_volume_1
+old_data_volume
+Total reclaimed space: 500MB
+
+🔨 Removing build cache...
+Deleted build cache objects:
+abc123def456
+Total reclaimed space: 1.2GB
+
+✅ Docker cleanup complete!
+```
+
+### push-multi-arch
+
+Pushes multi-architecture Docker images to a registry
+(default: GitHub Container Registry).
+
+**Required Variables:**
+
+- `NAMESPACE`: Registry namespace (e.g., username or organization)
+- `IMAGE_NAME`: Name of the Docker image
+- `ARM64_HASH`: Hash/ID of the ARM64 image
+- `AMD64_HASH`: Hash/ID of the AMD64 image
+- `GITHUB_TOKEN`: GitHub token for authentication
+- `GITHUB_USER`: GitHub username
+
+**Optional Variables:**
+
+- `REGISTRY`: Docker registry URL (default: `ghcr.io`)
+- `TAG`: Image tag (default: `latest`)
+
+```bash
+# Push multi-architecture image to GitHub Container Registry
+task push-multi-arch \
+  NAMESPACE=myorg \
+  IMAGE_NAME=myapp \
+  ARM64_HASH=sha256:abc123... \
+  AMD64_HASH=sha256:def456... \
+  GITHUB_TOKEN=$GITHUB_TOKEN \
+  GITHUB_USER=myusername
+
+# Push with custom tag and registry
+task push-multi-arch \
+  REGISTRY=docker.io \
+  NAMESPACE=myorg \
+  IMAGE_NAME=myapp \
+  TAG=v1.2.3 \
+  ARM64_HASH=sha256:abc123... \
+  AMD64_HASH=sha256:def456... \
+  GITHUB_TOKEN=$DOCKER_TOKEN \
+  GITHUB_USER=myusername
+```
+
+This task will:
+
+1. Authenticate to the registry (if not already authenticated)
+1. Check if images already exist in the registry to avoid redundant pushes
+1. Tag and push both ARM64 and AMD64 images
+1. Create and push a multi-architecture manifest
 
 ## 🔧 Extending Tasks
 
@@ -112,4 +201,32 @@ tasks:
       - task: docker:list-container-mounts
         vars:
           CONTAINER: project-web
+
+  cleanup-and-rebuild:
+    desc: "Clean Docker and rebuild project"
+    cmds:
+      - task: docker:clean-docker
+      - docker-compose build --no-cache
+      - docker-compose up -d
+
+  deploy-multiarch:
+    desc: "Build and deploy multi-architecture images"
+    cmds:
+      - docker buildx build --platform linux/arm64 -t myapp:arm64 .
+      - docker buildx build --platform linux/amd64 -t myapp:amd64 .
+      - task: docker:push-multi-arch
+        vars:
+          NAMESPACE: "{{.DOCKER_NAMESPACE}}"
+          IMAGE_NAME: myapp
+          ARM64_HASH: "$(docker images -q myapp:arm64)"
+          AMD64_HASH: "$(docker images -q myapp:amd64)"
+          GITHUB_TOKEN: "{{.GITHUB_TOKEN}}"
+          GITHUB_USER: "{{.GITHUB_USER}}"
 ```
+
+## 📚 Additional Resources
+
+- [Docker Documentation](https://docs.docker.com/)
+- [Taskfile Documentation](https://taskfile.dev/docs/)
+- [Docker Multi-Architecture Images](https://docs.docker.com/build/building/multi-platform/)
+- [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
