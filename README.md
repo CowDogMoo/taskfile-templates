@@ -53,44 +53,103 @@ task github:create-release
 
 ---
 
+## 🔄 Variables and Configuration
+
+### Environment Variables
+
+Many of the templates support configuration through environment variables. When
+you export an environment variable in your shell, Task will automatically pick
+it up:
+
+```bash
+# Set environment variable
+export GITHUB_TOKEN=your-token-here
+
+# Task will use this value automatically
+task github:create-release
+```
+
+### Variable Precedence
+
+Task follows this precedence order (highest to lowest priority):
+
+1. **CLI variables**: `task github:create-release NEXT_VERSION=1.0.0`
+1. **Task-level variables**: Variables defined in the task itself
+1. **Global variables**: Variables in the `vars:` section of your Taskfile
+1. **Environment variables**: Variables from your shell environment
+
+This means you can override any default configuration by passing variables directly:
+
+```bash
+# Override with CLI variable (highest priority)
+task github:create-release NEXT_VERSION=2.0.0
+
+# Or set via environment (lower priority)
+export NEXT_VERSION=2.0.0
+task github:create-release
+```
+
+### Template Variable Syntax
+
+If your Taskfile uses template syntax like this:
+
+```yaml
+vars:
+  MY_VAR: '{{.MY_VAR | default (env "MY_VAR") | default "fallback"}}'
+```
+
+It will check in order:
+
+1. Task variable `.MY_VAR`
+1. Environment variable `MY_VAR`
+1. Default value `"fallback"`
+
+This allows maximum flexibility in how you configure the templates.
+
+---
+
 ## 📂 Available Taskfiles
 
-### 🔧 Pre-Commit Tasks
+Each taskfile template includes its own README with detailed documentation
+about available tasks and configuration options. Here are the available
+templates:
 
-The `pre-commit` Taskfile provides the following tasks:
+### 📚 Template Categories
 
-- **Update Hooks:** Automatically updates pre-commit hooks.
-- **Clear Cache:** Clears the pre-commit cache.
-- **Run Hooks:** Runs all pre-commit hooks locally.
+- **[ansible/](ansible/)** - Ansible automation tasks including playbook
+  execution, inventory management, and role testing
+- **[aws/](aws/)** - AWS CLI operations, resource management, and deployment tasks
+- **[docker/](docker/)** - Docker container and image management, compose
+  operations, and registry tasks
+- **[github/](github/)** - GitHub repository management, release creation, PR
+  automation, and submodule handling
+- **[k8s/](k8s/)** - Kubernetes deployment, service management, and cluster operations
+- **[packer/](packer/)** - Packer image building, validation, and artifact management
+- **[pre-commit/](pre-commit/)** - Pre-commit hook management, updates, and execution
+- **[renovate/](renovate/)** - Renovate dependency update automation and configuration
+- **[secrets/](secrets/)** - Secret management with support for:
+  - **[local/](secrets/local/)** - Local secret storage and retrieval
+  - **[onepassword/](secrets/onepassword/)** - 1Password integration for team
+    secret management
+- **[terraform/](terraform/)** - Terraform/Terragrunt operations including
+  apply, destroy, validation, and testing
+- **[unifi/](unifi/)** - UniFi network controller management and configuration tasks
 
-### ☁️ Terraform Tasks
+### 📖 Usage
 
-- **check-terraform:** Validate that Terraform is installed.
-- **check-terragrunt:** Validate that Terragrunt is installed.
-- **terragrunt-apply:** Apply a specific module in a specific environment using Terragrunt.
-- **terragrunt-destroy:** Destroy a specific module in a specific environment
-  using Terragrunt.
-- **run-terratest:** Run Terratest for infrastructure testing.
-- **validate:** Run Terraform validate to ensure configuration is syntactically correct.
-- **format:** Format Terraform code.
+To see available tasks for any template, check the README in the respective
+directory. For example:
 
-### 🏷️ GitHub Tasks
+- View Docker tasks: [docker/README.md](docker/README.md)
+- View GitHub tasks: [github/README.md](github/README.md)
+- View Terraform tasks: [terraform/README.md](terraform/README.md)
 
-The `github` Taskfile provides the following tasks:
+Each README includes:
 
-- **add-git-submodules:** Add submodules from GitHub based on a naming pattern. Requires:
-  - `ORG`: GitHub organization name
-  - `REGEXP`: Regular expression to match repository names
-  - `TARGET_DIR`: Directory to store submodules
-- **check-gh-cli:** Validate that the GitHub CLI (`gh`) is installed
-- **create-release:** Create a new release on GitHub using the changelog. Requires:
-  - `NEXT_VERSION`: Version number for the release (e.g., "1.0.0")
-- **remove-git-submodules:** Remove and clean up specified submodules. Requires:
-  - `SUBMODULE_PATH`: Path to the submodule to remove
-- **merge-pull-requests:** Manage open pull requests by:
-  - Squashing and merging PRs with all checks passing
-  - Closing PRs with failing checks or conflicts
-  - Deleting branches after merge or close
+- Complete list of available tasks
+- Required and optional variables
+- Usage examples
+- Configuration options
 
 ---
 
