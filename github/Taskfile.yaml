@@ -4,8 +4,7 @@ version: "3"
 
 tasks:
   add-git-submodules:
-    desc: "Add submodules from GitHub based on a naming pattern"
-    silent: true
+    desc: Add submodules from GitHub based on a naming pattern
     cmds:
       - |
         # Create the target directory if it doesn't exist
@@ -37,11 +36,34 @@ tasks:
         git submodule sync --recursive
     requires:
       vars: ['ORG', 'REGEXP', 'TARGET_DIR']
+    silent: true
+
+  check-gh-cli:
+    desc: Validate that the GitHub CLI (gh) is installed
+    cmds:
+      - |
+        if ! command -v gh &> /dev/null; then
+          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
+          echo ""
+          echo "   Installation instructions:"
+          echo "   - macOS:   brew install gh"
+          echo "   - Ubuntu:  sudo apt install gh"
+          echo "   - Fedora:  sudo dnf install gh"
+          echo "   - Arch:    sudo pacman -S github-cli"
+          echo "   - Windows: winget install --id GitHub.cli"
+          echo ""
+          echo "   For other systems, see: https://github.com/cli/cli#installation"
+          exit 1
+        fi
+    silent: true
 
   create-release:
-    desc: "Create a release on GitHub"
-    deps:
-      - check-gh-cli
+    desc: Create a release on GitHub
+    deps: [check-gh-cli]
+    vars:
+      CHANGELOG_FILE: '{{.CHANGELOG_FILE | default "changelogs/CHANGELOG.rst"}}'
+      USE_CHANGELOG:
+        sh: '[ -f "{{.CHANGELOG_FILE}}" ] && echo "true" || echo "false"'
     cmds:
       - |
         # Check if NEXT_VERSION is set
@@ -51,14 +73,276 @@ tasks:
         fi
 
         # Create GitHub release
-        echo "Creating release $NEXT_VERSION"
-        gh release create $NEXT_VERSION -F changelogs/CHANGELOG.rst
+        if [ "{{.USE_CHANGELOG}}" = "true" ] && [ -z "{{.AUTO_NOTES}}" ]; then
+          echo "Creating release $NEXT_VERSION from {{.CHANGELOG_FILE}}"
+          gh release create "$NEXT_VERSION" -F "{{.CHANGELOG_FILE}}"
+        else
+          echo "Creating release $NEXT_VERSION with generated notes"
+          gh release create "$NEXT_VERSION" --generate-notes
+        fi
     requires:
       vars: ['NEXT_VERSION']
+    silent: true
+
+  diff-changes:
+    desc: Show git diff excluding specified patterns (comma-separated)
+    cmds:
+      - |
+        # Disable pagination for empty diffs
+        export GIT_PAGER='less -F -X'
+
+        if [ -n "{{.EXCLUDES}}" ]; then
+          command="git diff {{.BASE_BRANCH}} --"
+
+          # Process each pattern and add it to the command
+          echo "{{.EXCLUDES}}" | tr ',' '\n' | while read -r pattern; do
+            # Trim whitespace from pattern
+            pattern=$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -n "$pattern" ]; then
+              command="$command \":(exclude)$pattern\""
+            fi
+          done
+
+          # Capture the output of the git diff command
+          output=$(eval "$command")
+
+          # Check if there's any output
+          if [ -z "$output" ]; then
+            echo "No changes found when excluding patterns: {{.EXCLUDES}}"
+          else
+            echo "$output"
+          fi
+        else
+          # Capture output for regular diff
+          output=$(git diff {{.BASE_BRANCH}})
+          if [ -z "$output" ]; then
+            echo "No changes found in diff with {{.BASE_BRANCH}}"
+          else
+            echo "$output"
+          fi
+        fi
+    requires:
+      vars: ['BASE_BRANCH']
+    silent: true
+
+  ghcr-check-auth:
+    desc: Check GitHub authentication status
+    internal: true
+    deps: [check-gh-cli]
+    vars:
+      AUTH_STATUS:
+        sh: gh auth status &>/dev/null && echo "authenticated" || echo "unauthenticated"
+      HAS_TOKEN:
+        sh: '[ -n "$(gh auth token 2>/dev/null)" ] && echo "yes" || echo "no"'
+    status:
+      - test "{{.AUTH_STATUS}}" = "authenticated"
+      - test "{{.HAS_TOKEN}}" = "yes"
+    cmds:
+      - echo "Not authenticated with GitHub or missing token"
+      - echo "   To use GHCR images, run:"
+      - echo "   task ghcr-setup"
+    silent: true
+
+  ghcr-setup:
+    desc: Setup GitHub authentication for GHCR access
+    deps: [check-gh-cli]
+    cmds:
+      - |
+        # Check current auth status
+        if gh auth status &>/dev/null && [ -n "$(gh auth token 2>/dev/null)" ]; then
+          echo "Already authenticated with GitHub"
+          exit 0
+        fi
+
+        # Authenticate with required scopes
+        echo "Setting up GitHub authentication..."
+        gh auth login --scopes "read:packages"
+
+        # Verify token is available
+        if [ -z "$(gh auth token 2>/dev/null)" ]; then
+          echo "Failed to get GitHub token after authentication"
+          exit 1
+        fi
+
+        echo "GitHub authentication configured"
+    silent: true
+
+  ghcr-login:
+    desc: Login to GitHub Container Registry
+    internal: true
+    deps: [ghcr-check-auth]
+    vars:
+      TOKEN:
+        sh: gh auth token 2>/dev/null || true
+    preconditions:
+      - sh: '[ -n "{{.TOKEN}}" ]'
+        msg: "GitHub token not available. Run 'task ghcr-setup' first."
+    cmds:
+      - echo "{{.TOKEN}}" | docker login {{.GHCR_REGISTRY}} -u {{.GHCR_NAMESPACE}} --password-stdin
+      - echo "Logged in to GHCR"
+    silent: true
+
+  ghcr-pull-image:
+    desc: Pull and tag Docker image from registry
+    vars:
+      # Allow override of registry settings
+      REGISTRY: '{{.REGISTRY | default .GHCR_REGISTRY}}'
+      NAMESPACE: '{{.NAMESPACE | default .GHCR_NAMESPACE}}'
+      TAG: '{{.TAG | default .IMAGE_TAG}}'
+      # Build full image path
+      REMOTE_IMAGE: '{{.REMOTE_IMAGE | default (printf "%s/%s/%s:%s" .REGISTRY .NAMESPACE .IMAGE .TAG)}}'
+      LOCAL_IMAGE: '{{.LOCAL_IMAGE | default .IMAGE}}'
+      LOCAL_TAG: '{{.LOCAL_TAG | default .TAG}}'
+    requires:
+      vars: ['IMAGE']
+    cmds:
+      - |
+        echo "Pulling image: {{.REMOTE_IMAGE}}"
+        if ! docker pull {{.REMOTE_IMAGE}}; then
+          echo "Failed to pull {{.REMOTE_IMAGE}}"
+          echo "   Image may not exist or you may not have access"
+          exit 1
+        fi
+
+        # Tag for local use if different
+        if [ "{{.REMOTE_IMAGE}}" != "{{.LOCAL_IMAGE}}:{{.LOCAL_TAG}}" ]; then
+          docker tag {{.REMOTE_IMAGE}} {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}}
+          [ "{{.LOCAL_TAG}}" != "latest" ] && docker tag {{.REMOTE_IMAGE}} {{.LOCAL_IMAGE}}:latest
+        fi
+
+        echo "Image pulled and tagged as {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}}"
+    silent: true
+
+  ghcr-push-image:
+    desc: Tag and push Docker image to registry
+    vars:
+      # Allow override of registry settings
+      REGISTRY: '{{.REGISTRY | default .GHCR_REGISTRY}}'
+      NAMESPACE: '{{.NAMESPACE | default .GHCR_NAMESPACE}}'
+      TAG: '{{.TAG | default .IMAGE_TAG}}'
+      # Build full image path
+      REMOTE_IMAGE: '{{.REMOTE_IMAGE | default (printf "%s/%s/%s:%s" .REGISTRY .NAMESPACE .IMAGE .TAG)}}'
+      LOCAL_IMAGE: '{{.LOCAL_IMAGE | default .IMAGE}}'
+      LOCAL_TAG: '{{.LOCAL_TAG | default "latest"}}'
+      # Additional tags to push (comma-separated)
+      ADDITIONAL_TAGS: '{{.ADDITIONAL_TAGS | default ""}}'
+    requires:
+      vars: ['IMAGE']
+    deps: [ghcr-login]
+    cmds:
+      - |
+        echo "Pushing image: {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}} -> {{.REMOTE_IMAGE}}"
+
+        # Check if local image exists
+        if ! docker image inspect {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}} >/dev/null 2>&1; then
+          echo "Local image {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}} not found"
+          exit 1
+        fi
+
+        # Tag for remote if different
+        if [ "{{.LOCAL_IMAGE}}:{{.LOCAL_TAG}}" != "{{.REMOTE_IMAGE}}" ]; then
+          docker tag {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}} {{.REMOTE_IMAGE}}
+        fi
+
+        # Push main tag
+        if ! docker push {{.REMOTE_IMAGE}}; then
+          echo "Failed to push {{.REMOTE_IMAGE}}"
+          exit 1
+        fi
+
+        # Push additional tags if specified
+        if [ -n "{{.ADDITIONAL_TAGS}}" ]; then
+          IFS=',' read -ra TAGS <<< "{{.ADDITIONAL_TAGS}}"
+          for tag in "${TAGS[@]}"; do
+            tag=$(echo "$tag" | xargs)  # trim whitespace
+            REMOTE_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE}}:${tag}"
+            echo "Pushing additional tag: ${REMOTE_TAG}"
+            docker tag {{.LOCAL_IMAGE}}:{{.LOCAL_TAG}} ${REMOTE_TAG}
+            docker push ${REMOTE_TAG}
+          done
+        fi
+
+        echo "Image pushed successfully to {{.REMOTE_IMAGE}}"
+    silent: true
+
+  merge-pull-requests:
+    desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Fetch all open pull requests with required information
+        echo "Fetching open pull requests..."
+        raw_prs=$(gh pr list --state open --json number,statusCheckRollup,mergeable,headRefName)
+        echo "Raw PR data: $raw_prs"
+
+        # Process PRs with successful checks and handle conflicts
+        echo "$raw_prs" | jq -r '.[] | select(.statusCheckRollup != null) |
+          {
+            number: .number,
+            headRefName: .headRefName,
+            mergeable: .mergeable,
+            totalChecks: (.statusCheckRollup | length),
+            passingChecks: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length),
+            checksPass: (.statusCheckRollup | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
+          } |
+          @json' | while read -r pr_info; do
+
+          pr_number=$(echo "$pr_info" | jq -r '.number')
+          branch_name=$(echo "$pr_info" | jq -r '.headRefName')
+          mergeable=$(echo "$pr_info" | jq -r '.mergeable')
+          total_checks=$(echo "$pr_info" | jq -r '.totalChecks')
+          passing_checks=$(echo "$pr_info" | jq -r '.passingChecks')
+          checks_pass=$(echo "$pr_info" | jq -r '.checksPass')
+
+          echo "Processing PR #$pr_number (Branch: $branch_name)"
+          echo "Mergeable status: $mergeable"
+          echo "Checks status: $passing_checks of $total_checks passing"
+
+          # Check if PR is mergeable AND all checks pass
+          if [ "$checks_pass" = "true" ] && [ "$mergeable" = "MERGEABLE" ]; then
+            echo "Attempting to squash and merge PR #$pr_number..."
+            if gh pr merge "$pr_number" --squash --delete-branch --auto; then
+              echo "Successfully merged PR #$pr_number"
+            else
+              echo "Failed to merge PR #$pr_number despite being marked as mergeable"
+            fi
+          else
+            # Either has conflicts or failing checks, so close it
+            echo "PR #$pr_number has failing checks ($passing_checks of $total_checks passing) or conflicts. Closing PR..."
+            if gh pr close "$pr_number" --delete-branch; then
+              echo "Successfully closed PR #$pr_number and deleted branch $branch_name"
+            else
+              echo "Failed to close PR #$pr_number"
+            fi
+          fi
+        done
+
+        echo "Completed processing all pull requests"
+    requires:
+      vars: []
+    silent: true
+
+  pull-git-repos:
+    desc: Pull updates for all git repositories in the current directory
+    silent: true
+    cmds:
+      - |
+        find . -maxdepth 1 -type d ! -name ".git" -exec sh -c '
+          cd "{}" &&
+          echo "Processing: {}" &&
+          branch=$(git branch --show-current 2>/dev/null) &&
+          if [ -z "$branch" ]; then
+            echo "Failed in {}: Not on a branch. Skipping."
+          elif ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Failed in {}: Uncommitted or unstaged changes. Skipping."
+          else
+            git pull || echo "Failed in {}: Git pull failed."
+          fi
+        ' \;
 
   remove-git-submodules:
-    desc: "Remove one or more submodules and clean up related files"
-    silent: true
+    desc: Remove one or more submodules and clean up related files
     cmds:
       - |
         # Set variables
@@ -120,131 +404,6 @@ tasks:
         echo "Submodule removal complete"
     requires:
       vars: ['TARGET_DIR', 'REGEXP']
-
-  check-gh-cli:
-    desc: "Validate that the GitHub CLI (gh) is installed"
-    cmds:
-      - |
-        if ! command -v gh &> /dev/null; then
-          echo "'gh' command not found. Please install GitHub CLI: https://cli.github.com"
-          exit 1
-        fi
-    silent: true
-
-  merge-pull-requests:
-    desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
-    deps:
-      - check-gh-cli
-    cmds:
-      - |
-        # Fetch all open pull requests with required information
-        echo "Fetching open pull requests..."
-        raw_prs=$(gh pr list --state open --json number,statusCheckRollup,mergeable,headRefName)
-        echo "Raw PR data: $raw_prs"
-
-        # Process PRs with successful checks and handle conflicts
-        echo "$raw_prs" | jq -r '.[] | select(.statusCheckRollup != null) |
-          {
-            number: .number,
-            headRefName: .headRefName,
-            mergeable: .mergeable,
-            totalChecks: (.statusCheckRollup | length),
-            passingChecks: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length),
-            checksPass: (.statusCheckRollup | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
-          } |
-          @json' | while read -r pr_info; do
-
-          pr_number=$(echo "$pr_info" | jq -r '.number')
-          branch_name=$(echo "$pr_info" | jq -r '.headRefName')
-          mergeable=$(echo "$pr_info" | jq -r '.mergeable')
-          total_checks=$(echo "$pr_info" | jq -r '.totalChecks')
-          passing_checks=$(echo "$pr_info" | jq -r '.passingChecks')
-          checks_pass=$(echo "$pr_info" | jq -r '.checksPass')
-
-          echo "Processing PR #$pr_number (Branch: $branch_name)"
-          echo "Mergeable status: $mergeable"
-          echo "Checks status: $passing_checks of $total_checks passing"
-
-          # Check if PR is mergeable AND all checks pass
-          if [ "$checks_pass" = "true" ] && [ "$mergeable" = "MERGEABLE" ]; then
-            echo "Attempting to squash and merge PR #$pr_number..."
-            if gh pr merge "$pr_number" --squash --delete-branch --auto; then
-              echo "Successfully merged PR #$pr_number"
-            else
-              echo "Failed to merge PR #$pr_number despite being marked as mergeable"
-            fi
-          else
-            # Either has conflicts or failing checks, so close it
-            echo "PR #$pr_number has failing checks ($passing_checks of $total_checks passing) or conflicts. Closing PR..."
-            if gh pr close "$pr_number" --delete-branch; then
-              echo "Successfully closed PR #$pr_number and deleted branch $branch_name"
-            else
-              echo "Failed to close PR #$pr_number"
-            fi
-          fi
-        done
-
-        echo "Completed processing all pull requests"
-    requires:
-      vars: []
-
-  create-release-with-notes:
-    desc: "Create a release on GitHub with automatically generated release notes"
-    deps:
-      - check-gh-cli
-    cmds:
-      - |
-        # Check if NEXT_VERSION is set
-        if [ -z "$NEXT_VERSION" ]; then
-          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
-          exit 1
-        fi
-
-        # Create GitHub release with auto-generated notes
-        echo "Creating release $NEXT_VERSION with generated notes"
-        gh release create "$NEXT_VERSION" --generate-notes
-    requires:
-      vars: ['NEXT_VERSION']
-
-  diff-changes:
-    desc: "Show git diff excluding specified patterns (comma-separated)"
-    cmds:
-      - |
-        # Disable pagination for empty diffs
-        export GIT_PAGER='less -F -X'
-
-        if [ -n "{{.EXCLUDES}}" ]; then
-          command="git diff {{.BASE_BRANCH}} --"
-
-          # Process each pattern and add it to the command
-          echo "{{.EXCLUDES}}" | tr ',' '\n' | while read -r pattern; do
-            # Trim whitespace from pattern
-            pattern=$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            if [ -n "$pattern" ]; then
-              command="$command \":(exclude)$pattern\""
-            fi
-          done
-
-          # Capture the output of the git diff command
-          output=$(eval "$command")
-
-          # Check if there's any output
-          if [ -z "$output" ]; then
-            echo "No changes found when excluding patterns: {{.EXCLUDES}}"
-          else
-            echo "$output"
-          fi
-        else
-          # Capture output for regular diff
-          output=$(git diff {{.BASE_BRANCH}})
-          if [ -z "$output" ]; then
-            echo "No changes found in diff with {{.BASE_BRANCH}}"
-          else
-            echo "$output"
-          fi
-        fi
-    requires:
-      vars: ['BASE_BRANCH']
     silent: true
 
   sync-submodules:
@@ -308,21 +467,3 @@ tasks:
         git submodule sync --recursive
 
         echo "All submodules have been successfully synchronized."
-
-  pull-git-repos:
-    desc: "Pull updates for all git repositories in the current directory"
-    silent: true
-    cmds:
-      - |
-        find . -maxdepth 1 -type d ! -name ".git" -exec sh -c '
-          cd "{}" &&
-          echo "Processing: {}" &&
-          branch=$(git branch --show-current 2>/dev/null) &&
-          if [ -z "$branch" ]; then
-            echo "Failed in {}: Not on a branch. Skipping."
-          elif ! git diff --quiet || ! git diff --cached --quiet; then
-            echo "Failed in {}: Uncommitted or unstaged changes. Skipping."
-          else
-            git pull || echo "Failed in {}: Git pull failed."
-          fi
-        ' \;
