@@ -7,25 +7,31 @@ tasks:
     desc: Add submodules from GitHub based on a naming pattern
     cmds:
       - |
-        # Create the target directory if it doesn't exist
+        # Determine the submodule path
         if [ -n "{{.TARGET_DIR}}" ]; then
-          mkdir -p "{{.TARGET_DIR}}"
+          SUBMODULE_PATH="{{.TARGET_DIR}}/{{.REGEXP}}"
+        else
+          SUBMODULE_PATH="{{.REGEXP}}"
         fi
 
-        # Clean up any existing repositories that may cause conflicts
-        if [ -n "{{.REGEXP}}" ]; then
-          for repo in $(ls "{{.TARGET_DIR}}" | grep '{{.REGEXP}}'); do
-            if [ -d "{{.TARGET_DIR}}/$repo" ]; then
-              rm -rf "{{.TARGET_DIR}}/$repo"
-            fi
-          done
+        # Clean up any existing repository or staged changes
+        if [ -d "$SUBMODULE_PATH" ]; then
+          echo "Removing existing directory: $SUBMODULE_PATH"
+          rm -rf "$SUBMODULE_PATH"
         fi
+
+        # Remove from git index if it exists
+        git rm -f "$SUBMODULE_PATH" 2>/dev/null || true
+        git rm --cached "$SUBMODULE_PATH" 2>/dev/null || true
+
+        # Remove from .gitmodules if it exists
+        git config --file=.gitmodules --remove-section "submodule.$SUBMODULE_PATH" 2>/dev/null || true
 
         # Get the repository URL
         repo_url=$(gh repo view "{{.ORG}}/{{.REGEXP}}" --json url -q .url)
         if [ -n "$repo_url" ]; then
-          echo "Adding submodule from: $repo_url"
-          git submodule add "$repo_url" "{{.TARGET_DIR}}/{{.REGEXP}}"
+          echo "Adding submodule from: $repo_url to $SUBMODULE_PATH"
+          git submodule add "$repo_url" "$SUBMODULE_PATH"
         else
           echo "Error: Repository not found"
           exit 1
@@ -35,8 +41,8 @@ tasks:
         git submodule update --init --recursive
         git submodule sync --recursive
     requires:
-      vars: ['ORG', 'REGEXP', 'TARGET_DIR']
-    silent: true
+      vars: ['ORG', 'REGEXP']
+    silent: false
 
   check-gh-cli:
     desc: Validate that the GitHub CLI (gh) is installed
