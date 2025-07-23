@@ -4,7 +4,7 @@ version: "3"
 
 tasks:
   check-terraform:
-    desc: "Validate that Terraform is installed"
+    desc: Validate that Terraform is installed
     cmds:
       - |
         if ! command -v terraform &> /dev/null; then
@@ -14,7 +14,7 @@ tasks:
     silent: true
 
   check-terragrunt:
-    desc: "Validate that Terragrunt is installed"
+    desc: Validate that Terragrunt is installed
     cmds:
       - |
         if ! command -v terragrunt &> /dev/null; then
@@ -24,7 +24,7 @@ tasks:
     silent: true
 
   lint:
-    desc: "Run terraform fmt check and tflint on all terraform files"
+    desc: Run terraform fmt check and tflint on all terraform files
     deps:
       - check-terraform
     cmds:
@@ -37,7 +37,7 @@ tasks:
         done
     silent: true
 
-  _terragrunt-base:
+  terragrunt-base:
     internal: true
     deps:
       - check-terraform
@@ -50,6 +50,7 @@ tasks:
       ENV: '{{.ENV | default ""}}'
       MODULE: '{{.MODULE | default ""}}'
       REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION")}}'
+      VERBOSE: '{{.VERBOSE | default "false"}}'
     cmds:
       - |
         set -euo pipefail
@@ -80,6 +81,21 @@ tasks:
 
         # Configure terragrunt flags
         FLAGS="--non-interactive -lock=false"
+
+        # Add verbose/debug logging if requested
+        if [ "{{.VERBOSE}}" = "true" ]; then
+          # Use --log-level debug for detailed Terragrunt logging
+          FLAGS="$FLAGS --log-level debug"
+
+          # Also enable Terraform debug logging
+          export TF_LOG=DEBUG
+
+          # Optionally, you can use --log-format for different output styles
+          # FLAGS="$FLAGS --log-format key-value"
+        else
+          # Use bare format for cleaner output when not in verbose mode
+          FLAGS="$FLAGS --log-format bare"
+        fi
 
         # Only add -auto-approve for apply and destroy commands
         if [ "{{.AUTO_APPROVE | default "false" }}" = "true" ] && ( [ "{{.COMMAND}}" = "apply" ] || [ "{{.COMMAND}}" = "destroy" ] ); then
@@ -112,13 +128,14 @@ tasks:
           terragrunt {{.COMMAND}} $FLAGS --all \
             --working-dir "$FULL_PATH"
         fi
+    silent: true
 
   terragrunt-init:
-    desc: "Initialize a specific module in a given environment using Terragrunt"
+    desc: Initialize a specific module in a given environment using Terragrunt
     vars:
       COMMAND: init
     cmds:
-      - task: _terragrunt-base
+      - task: terragrunt-base
         vars:
           AUTO_APPROVE: '{{.AUTO_APPROVE}}'
           BASE_PATH: '{{.BASE_PATH}}'
@@ -127,13 +144,14 @@ tasks:
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
+    silent: true
 
   terragrunt-plan:
-    desc: "Plan changes to a specific module in a given environment using Terragrunt"
+    desc: Plan changes to a specific module in a given environment using Terragrunt
     vars:
       COMMAND: plan
     cmds:
-      - task: _terragrunt-base
+      - task: terragrunt-base
         vars:
           AUTO_APPROVE: '{{.AUTO_APPROVE}}'
           BASE_PATH: '{{.BASE_PATH}}'
@@ -142,13 +160,14 @@ tasks:
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
+    silent: true
 
   terragrunt-apply:
-    desc: "Apply a specific module in a given environment using Terragrunt"
+    desc: Apply a specific module in a given environment using Terragrunt
     vars:
       COMMAND: apply
     cmds:
-      - task: _terragrunt-base
+      - task: terragrunt-base
         vars:
           AUTO_APPROVE: '{{.AUTO_APPROVE}}'
           BASE_PATH: '{{.BASE_PATH}}'
@@ -157,13 +176,14 @@ tasks:
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
+    silent: true
 
   terragrunt-destroy:
-    desc: "Destroy a specific module in a given environment using Terragrunt"
+    desc: Destroy a specific module in a given environment using Terragrunt
     vars:
       COMMAND: destroy
     cmds:
-      - task: _terragrunt-base
+      - task: terragrunt-base
         vars:
           AUTO_APPROVE: '{{.AUTO_APPROVE}}'
           BASE_PATH: '{{.BASE_PATH}}'
@@ -172,9 +192,10 @@ tasks:
           ENV: '{{.ENV}}'
           REGION: '{{.REGION}}'
           MODULE: '{{.MODULE}}'
+    silent: true
 
   terratest-init:
-    desc: "Simple terraform init for tests"
+    desc: Simple terraform init for tests
     deps:
       - check-terraform
     cmds:
@@ -182,7 +203,7 @@ tasks:
     silent: true
 
   run-terratest:
-    desc: "Run Terratest for infrastructure testing"
+    desc: Run Terratest for infrastructure testing
     deps:
       - check-terraform
       - terratest-init
@@ -217,23 +238,25 @@ tasks:
     silent: true
 
   validate:
-    desc: "Run Terraform validate to ensure configuration is syntactically correct"
+    desc: Run Terraform validate to ensure configuration is syntactically correct
     deps:
       - check-terraform
     cmds:
       - |
         terraform validate
+    silent: true
 
   format:
-    desc: "Format Terraform code"
+    desc: Format Terraform code
     deps:
       - check-terraform
     cmds:
       - |
         terraform fmt -recursive
+    silent: true
 
   terragrunt-state-remove-all:
-      desc: "Remove all resources from the Terraform state for a specific module"
+      desc: Remove all resources from the Terraform state for a specific module
       deps:
         - check-terraform
         - check-terragrunt
@@ -279,7 +302,7 @@ tasks:
       silent: true
 
   terraform-init:
-    desc: "Initialize a specific module in a given environment using Terraform"
+    desc: Initialize a specific module in a given environment using Terraform
     deps:
       - check-terraform
     vars:
