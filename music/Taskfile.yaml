@@ -1,0 +1,88 @@
+---
+version: "3"
+
+tasks:
+  wav-to-mp3:
+    desc: "Convert WAV file(s) to MP3 format - single file or batch"
+    vars:
+      INPUT: '{{.INPUT | default ""}}'
+      DIR: '{{.DIR | default "."}}'
+      BITRATE: '{{.BITRATE | default "192k"}}'
+      BATCH: '{{.BATCH | default "false"}}'
+      OUTPUT: '{{.OUTPUT | default ""}}'
+    cmds:
+      # Check if ffmpeg is installed
+      - |
+        if ! command -v ffmpeg &> /dev/null; then
+          echo "Error: 'ffmpeg' command not found. Please install ffmpeg:"
+          echo "  - macOS: brew install ffmpeg"
+          echo "  - Ubuntu/Debian: sudo apt-get install ffmpeg"
+          echo "  - RHEL/CentOS: sudo yum install ffmpeg"
+          exit 1
+        fi
+
+      # Single file mode
+      - |
+        if [ "{{.BATCH}}" != "true" ] && [ -n "{{.INPUT}}" ]; then
+          # Expand tilde in the input path
+          input_file=$(eval echo "{{.INPUT}}")
+
+          if [ ! -f "$input_file" ]; then
+            echo "Error: Input file '$input_file' not found"
+            exit 1
+          fi
+
+          output_file="{{.OUTPUT}}"
+          if [ -z "$output_file" ]; then
+            # Use the expanded input path
+            base_name=$(basename "$input_file" .wav)
+            dir_name=$(dirname "$input_file")
+            output_file="$dir_name/$base_name.mp3"
+          else
+            # Also expand tilde in output if provided
+            output_file=$(eval echo "$output_file")
+          fi
+
+          echo "Converting $input_file to $output_file with bitrate {{.BITRATE}}"
+          ffmpeg -i "$input_file" -acodec mp3 -ab {{.BITRATE}} "$output_file"
+
+          if [ $? -eq 0 ]; then
+            echo "Successfully converted to $output_file"
+          else
+            echo "Error: Conversion failed"
+            exit 1
+          fi
+        fi
+
+      # Batch mode
+      - |
+        if [ "{{.BATCH}}" = "true" ] || [ -z "{{.INPUT}}" ]; then
+          # Expand tilde in directory path
+          search_dir=$(eval echo "{{.DIR}}")
+          wav_count=$(find "$search_dir" -maxdepth 1 -name "*.wav" -type f 2>/dev/null | wc -l)
+
+          if [ $wav_count -eq 0 ]; then
+            echo "No WAV files found in $search_dir"
+            exit 0
+          fi
+
+          echo "Found $wav_count WAV file(s) to convert in $search_dir"
+
+          find "$search_dir" -maxdepth 1 -name "*.wav" -type f | while read -r wav_file; do
+            base_name=$(basename "$wav_file" .wav)
+            dir_name=$(dirname "$wav_file")
+            mp3_file="$dir_name/$base_name.mp3"
+
+            echo "Converting: $(basename "$wav_file") -> $(basename "$mp3_file")"
+            ffmpeg -i "$wav_file" -acodec mp3 -ab {{.BITRATE}} "$mp3_file" -y -loglevel error
+
+            if [ $? -eq 0 ]; then
+              echo "  ✓ Success"
+            else
+              echo "  ✗ Failed"
+            fi
+          done
+
+          echo "Batch conversion complete"
+        fi
+    silent: false
