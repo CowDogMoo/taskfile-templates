@@ -355,3 +355,238 @@ tasks:
           terraform init $FLAGS
         fi
     silent: true
+
+  terraform-plan:
+    desc: Run terraform plan with tfvars file
+    deps:
+      - check-terraform
+    vars:
+      VAR_FILE: '{{.VAR_FILE | default "terraform.tfvars"}}'
+      VERBOSE: '{{.VERBOSE | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Enable verbose logging if requested
+        if [ "{{.VERBOSE}}" = "true" ]; then
+          export TF_LOG=DEBUG
+        fi
+
+        # Check if var file exists
+        if [ -f "{{.VAR_FILE}}" ]; then
+          echo "Running terraform plan with {{.VAR_FILE}}"
+          terraform plan -var-file={{.VAR_FILE}}
+        else
+          echo "Running terraform plan (no var file found)"
+          terraform plan
+        fi
+    silent: false
+
+  terraform-apply:
+    desc: Run terraform apply with tfvars file
+    deps:
+      - check-terraform
+    vars:
+      VAR_FILE: '{{.VAR_FILE | default "terraform.tfvars"}}'
+      AUTO_APPROVE: '{{.AUTO_APPROVE | default "false"}}'
+      VERBOSE: '{{.VERBOSE | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Enable verbose logging if requested
+        if [ "{{.VERBOSE}}" = "true" ]; then
+          export TF_LOG=DEBUG
+        fi
+
+        # Build command flags
+        FLAGS=""
+        if [ "{{.AUTO_APPROVE}}" = "true" ]; then
+          FLAGS="-auto-approve"
+        fi
+
+        # Check if var file exists
+        if [ -f "{{.VAR_FILE}}" ]; then
+          echo "Running terraform apply with {{.VAR_FILE}}"
+          terraform apply -var-file={{.VAR_FILE}} $FLAGS
+        else
+          echo "Running terraform apply (no var file found)"
+          terraform apply $FLAGS
+        fi
+    silent: false
+
+  terraform-destroy:
+    desc: Run terraform destroy with tfvars file
+    deps:
+      - check-terraform
+    vars:
+      VAR_FILE: '{{.VAR_FILE | default "terraform.tfvars"}}'
+      AUTO_APPROVE: '{{.AUTO_APPROVE | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Build command flags
+        FLAGS=""
+        if [ "{{.AUTO_APPROVE}}" = "true" ]; then
+          FLAGS="-auto-approve"
+        fi
+
+        # Check if var file exists
+        if [ -f "{{.VAR_FILE}}" ]; then
+          echo "Running terraform destroy with {{.VAR_FILE}}"
+          terraform destroy -var-file={{.VAR_FILE}} $FLAGS
+        else
+          echo "Running terraform destroy (no var file found)"
+          terraform destroy $FLAGS
+        fi
+    silent: false
+
+  terraform-refresh:
+    desc: Refresh Terraform state
+    deps:
+      - check-terraform
+    vars:
+      VAR_FILE: '{{.VAR_FILE | default "terraform.tfvars"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        # Check if var file exists
+        if [ -f "{{.VAR_FILE}}" ]; then
+          echo "Running terraform refresh with {{.VAR_FILE}}"
+          terraform refresh -var-file={{.VAR_FILE}}
+        else
+          echo "Running terraform refresh (no var file found)"
+          terraform refresh
+        fi
+    silent: false
+
+  terraform-output:
+    desc: Show Terraform outputs
+    deps:
+      - check-terraform
+    vars:
+      OUTPUT: '{{.OUTPUT | default ""}}'
+      FORMAT: '{{.FORMAT | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        FLAGS=""
+        if [ -n "{{.FORMAT}}" ]; then
+          FLAGS="-{{.FORMAT}}"
+        fi
+
+        if [ -n "{{.OUTPUT}}" ]; then
+          terraform output $FLAGS {{.OUTPUT}}
+        else
+          terraform output $FLAGS
+        fi
+    silent: false
+
+  terraform-import:
+    desc: Import existing infrastructure into Terraform state
+    deps:
+      - check-terraform
+    vars:
+      RESOURCE: '{{.RESOURCE}}'
+      ID: '{{.ID}}'
+      VAR_FILE: '{{.VAR_FILE | default "terraform.tfvars"}}'
+    cmds:
+      - |
+        set -euo pipefail
+
+        if [ -z "{{.RESOURCE}}" ] || [ -z "{{.ID}}" ]; then
+          echo "ERROR: RESOURCE and ID variables are required"
+          echo "Usage: task terraform-import RESOURCE=aws_instance.example ID=i-1234567890abcdef0"
+          exit 1
+        fi
+
+        # Check if var file exists
+        if [ -f "{{.VAR_FILE}}" ]; then
+          echo "Importing {{.RESOURCE}} with ID {{.ID}} using {{.VAR_FILE}}"
+          terraform import -var-file={{.VAR_FILE}} {{.RESOURCE}} {{.ID}}
+        else
+          echo "Importing {{.RESOURCE}} with ID {{.ID}}"
+          terraform import {{.RESOURCE}} {{.ID}}
+        fi
+    silent: false
+
+  terraform-state-list:
+    desc: List resources in Terraform state
+    deps:
+      - check-terraform
+    cmds:
+      - terraform state list
+    silent: false
+
+  terraform-state-show:
+    desc: Show details of a resource in Terraform state
+    deps:
+      - check-terraform
+    vars:
+      RESOURCE: '{{.RESOURCE}}'
+    cmds:
+      - |
+        if [ -z "{{.RESOURCE}}" ]; then
+          echo "ERROR: RESOURCE variable is required"
+          echo "Usage: task terraform-state-show RESOURCE=aws_instance.example"
+          exit 1
+        fi
+        terraform state show {{.RESOURCE}}
+    silent: false
+
+  # Composite tasks for common workflows
+
+  tf-init-upgrade:
+    desc: Initialize Terraform with upgrade flag
+    deps:
+      - check-terraform
+    cmds:
+      - terraform init -upgrade
+    silent: false
+
+  tf-check:
+    desc: Format and validate Terraform configuration
+    cmds:
+      - task: format
+      - task: validate
+      - task: lint
+    silent: false
+
+  tf-plan:
+    desc: Full Terraform plan workflow (init, format, validate, plan)
+    cmds:
+      - task: tf-init-upgrade
+      - task: tf-check
+      - task: terraform-plan
+        vars:
+          VAR_FILE: '{{.VAR_FILE}}'
+          VERBOSE: '{{.VERBOSE}}'
+    silent: false
+
+  tf-apply:
+    desc: Full Terraform apply workflow (init, format, validate, apply)
+    cmds:
+      - task: tf-init-upgrade
+      - task: tf-check
+      - task: terraform-apply
+        vars:
+          VAR_FILE: '{{.VAR_FILE}}'
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+          VERBOSE: '{{.VERBOSE}}'
+    silent: false
+
+  tf-destroy:
+    desc: Full Terraform destroy workflow (init, plan destroy, destroy)
+    cmds:
+      - task: tf-init-upgrade
+      - |
+        echo "Planning destroy operation..."
+      - terraform plan -destroy -var-file={{.VAR_FILE | default "terraform.tfvars"}}
+      - task: terraform-destroy
+        vars:
+          VAR_FILE: '{{.VAR_FILE}}'
+          AUTO_APPROVE: '{{.AUTO_APPROVE}}'
+    silent: false
