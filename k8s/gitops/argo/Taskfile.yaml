@@ -3,7 +3,7 @@
 version: "3"
 
 tasks:
-  setup-argocd:
+  install:
     deps: [":check-helm", ":check-kubectl"]
     desc: Install ArgoCD using Helm
     vars:
@@ -51,7 +51,7 @@ tasks:
         echo "Default admin password is: {{ .ARGOCD_PASSWORD }}"
     silent: true
 
-  uninstall-argocd:
+  uninstall:
     deps: [":check-helm", ":check-kubectl"]
     desc: Remove ArgoCD installation
     vars:
