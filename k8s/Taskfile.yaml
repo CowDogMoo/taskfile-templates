@@ -2,21 +2,57 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+set: [pipefail]
+
+includes:
+  helm:
+    taskfile: ./helm
+  argo:
+    taskfile: ./gitops/argo
+    optional: true
+  flux:
+    taskfile: ./gitops/flux
+    optional: true
+
 tasks:
+  # ============================================
+  # Prerequisites & Validation
+  # ============================================
+  check-kind:
+    desc: Validate that kind is installed
+    cmds:
+      - |
+        if ! command -v kind &> /dev/null; then
+          echo -e "Error: 'kind' command not found"
+          echo "Please install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+          exit 1
+        fi
+        echo "✓ kind is installed ($(kind version))"
+    silent: true
+
+  check-kubectl:
+    desc: Validate that kubectl is installed
+    cmds:
+      - |
+        if ! command -v kubectl &> /dev/null; then
+          echo -e "Error: 'kubectl' command not found"
+          echo "Please install kubectl: https://kubernetes.io/docs/tasks/tools/"
+          exit 1
+        fi
+        echo "✓ kubectl is installed ($(kubectl version --client -o json | jq -r .clientVersion.gitVersion))"
+    silent: true
+
+  # ============================================
+  # Cluster Management
+  # ============================================
   create-kind:
-    desc: "Create a kind cluster with one control plane and one worker node"
+    deps: [check-kind]
+    desc: Create a kind cluster with one control plane and one worker node
     vars:
       CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
       CONFIG_PATH: '{{ .CONFIG_PATH | default "/tmp/kind-config-${CLUSTER_NAME}.yaml" }}'
     cmds:
     - |
-        # Check for kind binary
-        if ! command -v kind &> /dev/null; then
-          echo "Error: 'kind' binary not found in PATH"
-          echo "Please install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
-          exit 1
-        fi
-
         # Create config directory if it doesn't exist
         mkdir -p "$(dirname {{ .CONFIG_PATH }})"
 
@@ -36,9 +72,11 @@ tasks:
         if [[ "{{ .CONFIG_PATH }}" == "/tmp/kind-config-${CLUSTER_NAME}.yaml" ]]; then
           rm -f {{ .CONFIG_PATH }}
         fi
+    silent: true
 
   destroy-kind:
-    desc: "Delete the kind cluster and cleanup related resources"
+    deps: [check-kind]
+    desc: Delete the kind cluster and cleanup related resources
     vars:
       CLUSTER_NAME: '{{ .CLUSTER_NAME | default "test-cluster" }}'
       CONFIG_PATH: '{{ .CONFIG_PATH | default "/tmp/kind-config-${CLUSTER_NAME}.yaml" }}'
@@ -62,9 +100,87 @@ tasks:
         echo "Cleaning up any remaining Docker resources..."
         docker container prune -f
         docker network prune -f
+    silent: true
 
+  # ============================================
+  # Node Operations
+  # ============================================
+  describe-node:
+    deps: [check-kubectl]
+    desc: Describe a specific node
+    summary: |
+      Get detailed information about a specific node
+
+      Example:
+        task k8s:describe-node NODE=k8s1
+    vars:
+      NODE: "{{.NODE}}"
+    cmds:
+      - |
+        if [ -z "{{.NODE}}" ]; then
+          echo -e "Error: NODE variable not set"
+          echo "Usage: task k8s:describe-node NODE=nodename"
+          exit 1
+        fi
+        kubectl describe node {{.NODE}}
+    silent: true
+
+  drain-node:
+    deps: [check-kubectl]
+    desc: Drain a node for maintenance
+    summary: |
+      Safely evict all pods from a node for maintenance
+
+      Example:
+        task k8s:drain-node NODE=k8s1
+    vars:
+      NODE: "{{.NODE}}"
+    prompt: "This will drain node {{.NODE}}. Continue?"
+    cmds:
+      - |
+        if [ -z "{{.NODE}}" ]; then
+          echo -e "Error: NODE variable not set"
+          echo "Usage: task k8s:drain-node NODE=nodename"
+          exit 1
+        fi
+        kubectl drain {{.NODE}} --ignore-daemonsets --delete-emptydir-data
+    silent: true
+
+  list-node-pods:
+    deps: [check-kubectl]
+    desc: List all pods running on a specific node across all namespaces
+    vars:
+      NODE_NAME: '{{ .NODE_NAME | default "node1" }}'
+    cmds:
+      - kubectl get pods --all-namespaces --field-selector spec.nodeName={{ .NODE_NAME }} -o wide
+    silent: true
+
+  uncordon-node:
+    deps: [check-kubectl]
+    desc: Uncordon a node after maintenance
+    summary: |
+      Mark a node as schedulable again after maintenance
+
+      Example:
+        task k8s:uncordon-node NODE=k8s1
+    vars:
+      NODE: "{{.NODE}}"
+    cmds:
+      - |
+        if [ -z "{{.NODE}}" ]; then
+          echo -e "Error: NODE variable not set"
+          echo "Usage: task k8s:uncordon-node NODE=nodename"
+          exit 1
+        fi
+        kubectl uncordon {{.NODE}}
+    silent: true
+
+  # ============================================
+  # Troubleshooting & Debugging
+  # ============================================
   destroy-stuck-ns:
-    desc: "Remove finalizers from stuck Kubernetes namespaces"
+    deps: [check-kubectl]
+    desc: Remove finalizers from stuck Kubernetes namespaces
     vars:
       PROXY_PORT: '{{ .PROXY_PORT | default "8001" }}'
     cmds:
@@ -155,123 +271,25 @@ tasks:
         done
 
         echo "All stuck namespaces have been processed"
+    silent: true
 
-  list-node-pods:
-    desc: "List all pods running on a specific node across all namespaces"
+  get-events:
+    deps: [check-kubectl]
+    desc: Get cluster events sorted by timestamp
     vars:
-      NODE_NAME: '{{ .NODE_NAME | default "node1" }}'
-    cmds:
-      - kubectl get pods --all-namespaces --field-selector spec.nodeName={{ .NODE_NAME }} -o wide
-
-  setup-helm:
-    desc: "Install and configure a Helm chart"
-    vars:
-      HELM_RELEASE: '{{ .HELM_RELEASE }}'
-      HELM_CHART: '{{ .HELM_CHART }}'
-      HELM_NAMESPACE: '{{ .HELM_NAMESPACE | default "default" }}'
-      HELM_VERSION: '{{ .HELM_VERSION }}'
-      HELM_VALUES: '{{ .HELM_VALUES | default "" }}'
-      HELM_REPO_NAME: '{{ .HELM_REPO_NAME }}'
-      HELM_REPO_URL: '{{ .HELM_REPO_URL }}'
-    cmds:
-      - helm repo add {{ .HELM_REPO_NAME }} {{ .HELM_REPO_URL }}
-      - helm repo update
-      - |
-        helm upgrade --install {{ .HELM_RELEASE }} {{ .HELM_CHART }} \
-          --namespace {{ .HELM_NAMESPACE }} \
-          {{if .HELM_VERSION}}--version {{ .HELM_VERSION }}{{end}} \
-          {{if .HELM_VALUES}}--values {{ .HELM_VALUES }}{{end}} \
-          --create-namespace \
-          --wait
-
-  setup-argocd:
-    desc: "Install ArgoCD using Helm"
-    vars:
-      ARGOCD_NAMESPACE: '{{ .ARGOCD_NAMESPACE | default "argocd" }}'
-      ARGOCD_VERSION: '{{ .ARGOCD_VERSION | default "5.51.6" }}'
-      ARGOCD_PASSWORD: '{{ .ARGOCD_PASSWORD | default "admin" }}'
+      NAMESPACE: '{{.NAMESPACE | default ""}}'
     cmds:
       - |
-        # Check for helm binary
-        if ! command -v helm &> /dev/null; then
-          echo "Error: 'helm' binary not found in PATH"
-          echo "Please install helm: https://helm.sh/docs/intro/install/"
-          exit 1
+        if [ -n "{{.NAMESPACE}}" ]; then
+          kubectl get events -n {{.NAMESPACE}} --sort-by='.lastTimestamp'
+        else
+          kubectl get events --all-namespaces --sort-by='.lastTimestamp'
         fi
+    silent: true
 
-        # Check for Python bcrypt module
-        if ! python3 -c "import bcrypt" &> /dev/null; then
-          echo "Error: Python 'bcrypt' module not found"
-          echo "Please install it with: python3 -m pip install bcrypt"
-          exit 1
-        fi
-      - task: setup-helm
-        vars:
-          HELM_RELEASE: argocd
-          HELM_CHART: argo/argo-cd
-          HELM_NAMESPACE: '{{ .ARGOCD_NAMESPACE }}'
-          HELM_VERSION: '{{ .ARGOCD_VERSION }}'
-          HELM_REPO_NAME: argo
-          HELM_REPO_URL: https://argoproj.github.io/argo-helm
-      - |
-        PASSWORD=$(python3 -c 'import bcrypt; import sys; print(bcrypt.hashpw(sys.argv[1].encode("utf-8"), bcrypt.gensalt(10)).decode("utf-8"))' '{{ .ARGOCD_PASSWORD }}')
-
-        helm upgrade argocd argo/argo-cd \
-          --namespace {{ .ARGOCD_NAMESPACE }} \
-          --version {{ .ARGOCD_VERSION }} \
-          --set server.extraArgs[0]=--insecure \
-          --set server.service.type=LoadBalancer \
-          --set configs.secret.argocdServerAdminPassword="$PASSWORD" \
-          --set configs.params.server.insecure=true \
-          --set configs.cm."application\.resourceTrackingMethod"=annotation \
-          --set configs.cm."timeout\.reconciliation"=180s \
-          --set configs.cm."admin\.enabled"=true \
-          --set configs.cm."kustomize\.buildOptions"="--enable-alpha-plugins" \
-          --reuse-values \
-          --wait
-      - |
-        echo "Waiting for ArgoCD server to be ready..."
-        kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n {{ .ARGOCD_NAMESPACE }}
-      - |
-        echo "ArgoCD installed successfully"
-        echo "Access UI with: kubectl port-forward svc/argocd-server -n {{ .ARGOCD_NAMESPACE }} 8080:443"
-        echo "Default admin password is: {{ .ARGOCD_PASSWORD }}"
-
-  setup-flux:
-    desc: "Install Flux using Helm"
-    vars:
-      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
-      FLUX_VERSION: '{{ .FLUX_VERSION | default "2.14.1" }}'
-      FLUX_VALUES: '{{ .FLUX_VALUES }}'
+  get-pods-all-ns:
+    deps: [check-kubectl]
+    desc: Get all pods across all namespaces
     cmds:
-      - task: setup-helm
-        vars:
-          HELM_RELEASE: flux
-          HELM_CHART: fluxcd-community/flux2
-          HELM_NAMESPACE: '{{ .FLUX_NAMESPACE }}'
-          HELM_VERSION: '{{ .FLUX_VERSION }}'
-          HELM_VALUES: '{{ .FLUX_VALUES }}'
-          HELM_REPO_NAME: fluxcd-community
-          HELM_REPO_URL: https://fluxcd-community.github.io/helm-charts
-      - |
-        echo "Waiting for Flux controllers to be ready..."
-        kubectl wait --for=condition=available --timeout=300s deployment -l app.kubernetes.io/instance=flux -n {{ .FLUX_NAMESPACE }}
-      - |
-        echo "Flux installed successfully"
-        echo "View resources with: kubectl get all -n {{ .FLUX_NAMESPACE }}"
-
-  uninstall-argocd:
-    desc: "Remove ArgoCD installation"
-    vars:
-      ARGOCD_NAMESPACE: '{{ .ARGOCD_NAMESPACE | default "argocd" }}'
-    cmds:
-      - helm uninstall argocd -n {{ .ARGOCD_NAMESPACE }}
-      - kubectl delete namespace {{ .ARGOCD_NAMESPACE }}
-
-  uninstall-flux:
-    desc: "Remove Flux installation"
-    vars:
-      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
-    cmds:
-      - helm uninstall flux -n {{ .FLUX_NAMESPACE }}
-      - kubectl delete namespace {{ .FLUX_NAMESPACE }}
+      - kubectl get pods --all-namespaces -o wide
+    silent: true

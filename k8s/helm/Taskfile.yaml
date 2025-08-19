@@ -1,0 +1,38 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  check-helm:
+    desc: Validate that Helm is installed
+    cmds:
+      - |
+        if ! command -v helm &> /dev/null; then
+          echo -e "Error: 'helm' command not found"
+          echo "Please install Helm: https://helm.sh/docs/intro/install/"
+          exit 1
+        fi
+        echo "✓ Helm is installed ($(helm version --short))"
+    silent: true
+
+  setup-helm:
+    desc: "Install and configure a Helm chart"
+    vars:
+      HELM_RELEASE: '{{ .HELM_RELEASE }}'
+      HELM_CHART: '{{ .HELM_CHART }}'
+      HELM_NAMESPACE: '{{ .HELM_NAMESPACE | default "default" }}'
+      HELM_VERSION: '{{ .HELM_VERSION }}'
+      HELM_VALUES: '{{ .HELM_VALUES | default "" }}'
+      HELM_REPO_NAME: '{{ .HELM_REPO_NAME }}'
+      HELM_REPO_URL: '{{ .HELM_REPO_URL }}'
+    cmds:
+      - helm repo add {{ .HELM_REPO_NAME }} {{ .HELM_REPO_URL }}
+      - helm repo update
+      - |
+        helm upgrade --install {{ .HELM_RELEASE }} {{ .HELM_CHART }} \
+          --namespace {{ .HELM_NAMESPACE }} \
+          {{if .HELM_VERSION}}--version {{ .HELM_VERSION }}{{end}} \
+          {{if .HELM_VALUES}}--values {{ .HELM_VALUES }}{{end}} \
+          --create-namespace \
+          --wait
+    silent: true

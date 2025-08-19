@@ -1,0 +1,164 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  check-flux:
+    deps: [":helm:check-helm", ":check-kubectl"]
+    desc: Check if Flux is installed
+    cmds:
+      - |
+        if ! command -v flux &> /dev/null; then
+          echo -e "Error: flux CLI not found. Please install the flux CLI."
+          echo "Installation instructions: https://fluxcd.io/flux/installation/#install-the-flux-cli"
+          exit 1
+        fi
+        echo "✓ Flux CLI is installed ($(flux version --client -o json | jq -r .flux))"
+    silent: true
+
+  get-not-ready:
+    deps: [check-flux]
+    desc: Get all Flux resources that are not ready
+    cmds:
+      - |
+        echo -e "Gathering all Flux objects that are not ready..."
+        flux get all -A --status-selector ready=false
+    silent: true
+
+  install:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Install Flux using Helm
+    vars:
+      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
+      FLUX_VERSION: '{{ .FLUX_VERSION | default "2.14.1" }}'
+      FLUX_VALUES: '{{ .FLUX_VALUES }}'
+    cmds:
+      - task: :setup-helm
+        vars:
+          HELM_RELEASE: flux
+          HELM_CHART: fluxcd-community/flux2
+          HELM_NAMESPACE: '{{ .FLUX_NAMESPACE }}'
+          HELM_VERSION: '{{ .FLUX_VERSION }}'
+          HELM_VALUES: '{{ .FLUX_VALUES }}'
+          HELM_REPO_NAME: fluxcd-community
+          HELM_REPO_URL: https://fluxcd-community.github.io/helm-charts
+      - |
+        echo "Waiting for Flux controllers to be ready..."
+        kubectl wait --for=condition=available --timeout=300s deployment -l app.kubernetes.io/instance=flux -n {{ .FLUX_NAMESPACE }}
+      - |
+        echo "Flux installed successfully"
+    silent: true
+
+  logs:
+    deps: [check-flux]
+    desc: Show logs from Flux controllers
+    vars:
+      FOLLOW: '{{.FOLLOW | default "false"}}'
+      CONTROLLER: '{{.CONTROLLER | default ""}}'
+    cmds:
+      - |
+        follow_flag=""
+        if [ "{{.FOLLOW}}" = "true" ]; then
+          follow_flag="--follow"
+        fi
+
+        controller_flag=""
+        if [ -n "{{.CONTROLLER}}" ]; then
+          controller_flag="--name={{.CONTROLLER}}"
+        fi
+
+        echo -e "Showing Flux controller logs..."
+        flux logs $follow_flag $controller_flag
+    silent: true
+
+  status:
+    deps: [check-flux]
+    desc: Check the status of all Flux resources
+    cmds:
+      - |
+        echo -e "Checking Flux resources status..."
+        flux get all -A
+    silent: true
+
+  sync-all:
+    desc: Sync all Flux resources
+    cmds:
+      - task: sync-gitrepositories
+      - task: sync-kustomizations
+      - task: sync-helmreleases
+    silent: true
+
+  sync-gitrepositories:
+    desc: Sync all Flux GitRepositories
+    cmds:
+      - task: sync-resource
+        vars:
+          RESOURCE_TYPE: gitrepositories
+          SUCCESS_MSG: "GitRepositories synced successfully."
+    silent: true
+
+  sync-helmreleases:
+    desc: Sync all Flux HelmReleases
+    cmds:
+      - task: sync-resource
+        vars:
+          RESOURCE_TYPE: helmreleases
+          SUCCESS_MSG: "HelmReleases synced successfully."
+    silent: true
+
+  sync-kustomizations:
+    desc: Sync all Flux Kustomizations
+    cmds:
+      - task: sync-resource
+        vars:
+          RESOURCE_TYPE: kustomizations
+          SUCCESS_MSG: "Kustomizations synced successfully."
+    silent: true
+
+  sync-resource:
+    internal: true
+    deps: ["check-flux", ":check-kubectl"]
+    desc: Internal task to sync Flux resources of a specific type
+    vars:
+      RESOURCE_TYPE: "{{.RESOURCE_TYPE}}"
+      SUCCESS_MSG: "{{.SUCCESS_MSG}}"
+      TIMESTAMP:
+        sh: date +%s
+    cmds:
+      - |
+        echo "Syncing {{.RESOURCE_TYPE}}..."
+
+        # Get all resources and annotate them
+        kubectl get {{.RESOURCE_TYPE}} --all-namespaces --no-headers 2>/dev/null | while read -r line; do
+          if [ -z "$line" ]; then
+            continue
+          fi
+
+          namespace=$(echo "$line" | awk '{print $1}')
+          name=$(echo "$line" | awk '{print $2}')
+
+          if [ -z "$namespace" ] || [ -z "$name" ]; then
+            continue
+          fi
+
+          echo "Annotating {{.RESOURCE_TYPE}}/$name in namespace $namespace"
+          kubectl -n "$namespace" annotate {{.RESOURCE_TYPE}}/"$name" \
+            "reconcile.fluxcd.io/requestedAt={{.TIMESTAMP}}" \
+            --overwrite || {
+            echo -e "Error: Failed to annotate {{.RESOURCE_TYPE}}/$name in namespace $namespace"
+            exit 1
+          }
+        done
+
+        echo -e "{{.SUCCESS_MSG}}"
+    silent: true
+
+  uninstall:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Remove Flux installation
+    vars:
+      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
+    cmds:
+      - helm uninstall flux -n {{ .FLUX_NAMESPACE }}
+      - kubectl delete namespace {{ .FLUX_NAMESPACE }}
+    silent: true

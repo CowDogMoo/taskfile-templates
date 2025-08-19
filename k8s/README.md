@@ -1,261 +1,338 @@
 # 🚢 Kubernetes Taskfile Tasks
 
-This directory contains reusable Taskfile tasks for Kubernetes operations,
-including namespace cleanup, pod management, and cluster maintenance tasks.
+This repository contains reusable Taskfile tasks for Kubernetes operations,
+including cluster management, GitOps tooling (ArgoCD/Flux), and troubleshooting
+utilities.
 
 ## 📋 Prerequisites
 
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) installed
-  and configured
-- [jq](https://stedolan.github.io/jq/download/) installed (for JSON processing)
-- [Task](https://taskfile.dev) installed (`brew install go-task/tap/go-task`)
-- [Helm](https://helm.sh/docs/intro/install/) installed (for package management)
-- [Python3](https://www.python.org/downloads/) with `bcrypt` package (for
-  password hashing)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) -
+  Kubernetes CLI
+- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) - Local
+  Kubernetes clusters (optional)
+- [Helm](https://helm.sh/docs/intro/install/) - Kubernetes package manager
+- [Task](https://taskfile.dev) - Task runner (`brew install go-task/tap/go-task`)
+- [jq](https://stedolan.github.io/jq/download/) - JSON processor
+- [Python3](https://www.python.org/downloads/) with `bcrypt` - For ArgoCD
+  password hashing
+- [Flux CLI](https://fluxcd.io/flux/installation/#install-the-flux-cli) - For
+  Flux operations (optional)
+
+## 📁 Project Structure
+
+```text
+.
+├── gitops/              # GitOps tooling tasks
+│   ├── argo/            # ArgoCD specific tasks
+│   └── flux/            # Flux specific tasks
+├── helm/                # Helm management tasks
+└── Taskfile.yaml        # Main task definitions
+```
 
 ## 🎯 Available Tasks
 
-### create-kind
+### Cluster Management
 
-Creates a kind cluster with one control plane and one worker node using a
-configuration file.
+#### create-kind
 
-**Variables:**
-
-- `CLUSTER_NAME`: Name for the cluster (default: test-cluster)
-- `CONFIG_PATH`: Path to the kind config file (default: /tmp/kind-config-${CLUSTER_NAME}.yaml)
+Creates a local Kubernetes cluster using kind with one control plane and one
+worker node.
 
 ```bash
-# Create a new cluster with default settings
+# Create with defaults
 task create-kind
 
-# Create a cluster with custom name
-task create-kind CLUSTER_NAME=my-dev-cluster
+# Custom cluster name
+task create-kind CLUSTER_NAME=dev-cluster
 
-# Create a cluster with persistent config file
-task create-kind CONFIG_PATH=./my-kind-config.yaml
-
-# The cluster will include:
-# - One control-plane node
-# - One worker node
+# Custom config path
+task create-kind CONFIG_PATH=./my-config.yaml
 ```
 
-### destroy-kind
+#### destroy-kind
 
-Deletes a kind cluster and cleans up associated Docker resources.
-
-**Variables:**
-
-- `CLUSTER_NAME`: Name of the cluster to delete (default: test-cluster)
-- `CONFIG_PATH`: Path to the kind config file (default: /tmp/kind-config-${CLUSTER_NAME}.yaml)
+Removes a kind cluster and cleans up Docker resources.
 
 ```bash
-# Delete the default test cluster
+# Remove default cluster
 task destroy-kind
 
-# Delete a specific cluster
-task destroy-kind CLUSTER_NAME=my-custom-cluster
-
-# Delete cluster and keep config file
-task destroy-kind CONFIG_PATH=./my-kind-config.yaml
-
-# The task will:
-# - Check if the cluster exists before attempting deletion
-# - Remove the kind cluster
-# - Clean up the config file (if using default location)
-# - Clean up related Docker resources
+# Remove specific cluster
+task destroy-kind CLUSTER_NAME=dev-cluster
 ```
 
-### destroy-stuck-ns
+### Node Operations
 
-Removes finalizers from Kubernetes namespaces stuck in the `Terminating` state.
-Handles proxy management and cleanup automatically.
+#### describe-node
 
-**Variables:**
-
-- `PROXY_PORT`: Port to use for kubectl proxy (default: 8001)
+Get detailed information about a specific node.
 
 ```bash
-# Remove finalizers using default proxy port
+task describe-node NODE=kind-control-plane
+```
+
+#### drain-node
+
+Safely evict all pods from a node for maintenance.
+
+```bash
+task drain-node NODE=kind-worker
+```
+
+#### uncordon-node
+
+Mark a node as schedulable again after maintenance.
+
+```bash
+task uncordon-node NODE=kind-worker
+```
+
+#### list-node-pods
+
+List all pods running on a specific node.
+
+```bash
+task list-node-pods NODE_NAME=kind-worker
+```
+
+### Troubleshooting
+
+#### destroy-stuck-ns
+
+Removes finalizers from namespaces stuck in `Terminating` state.
+
+```bash
+# Use default proxy port
 task destroy-stuck-ns
 
-# Use custom proxy port
+# Custom proxy port
 task destroy-stuck-ns PROXY_PORT=8002
-
-# Run with verbose output to debug issues
-task destroy-stuck-ns --verbose
 ```
 
-### list-node-pods
+#### get-events
 
-Lists all pods running on a specific Kubernetes node across all namespaces.
-
-**Variables:**
-
-- `NODE_NAME`: Target node name (default: node1)
+Get cluster events sorted by timestamp.
 
 ```bash
-# List pods on default node
-task list-node-pods
+# All namespaces
+task get-events
 
-# List pods on specific node
-task list-node-pods NODE_NAME=k8s6
+# Specific namespace
+task get-events NAMESPACE=default
 ```
 
-### setup-helm
+#### get-pods-all-ns
 
-Generic Helm chart installation task that handles repository setup and chart deployment.
-
-**Variables:**
-
-- `HELM_RELEASE`: Name of the Helm release (required)
-- `HELM_CHART`: Chart to install (required)
-- `HELM_NAMESPACE`: Target namespace (default: default)
-- `HELM_VERSION`: Specific chart version to install (optional)
-- `HELM_VALUES`: Path to values file (optional)
-- `HELM_REPO_NAME`: Name for the Helm repository (required)
-- `HELM_REPO_URL`: URL of the Helm repository (required)
+List all pods across all namespaces.
 
 ```bash
-# Install nginx from Bitnami repo
-task setup-helm \
-  HELM_RELEASE=my-nginx \
-  HELM_CHART=bitnami/nginx \
-  HELM_NAMESPACE=web \
-  HELM_REPO_NAME=bitnami \
-  HELM_REPO_URL=https://charts.bitnami.com/bitnami
-
-# Install specific version with custom values
-task setup-helm \
-  HELM_RELEASE=my-app \
-  HELM_CHART=stable/app \
-  HELM_VERSION=1.2.3 \
-  HELM_VALUES=my-values.yaml \
-  HELM_REPO_NAME=stable \
-  HELM_REPO_URL=https://charts.helm.sh/stable
+task get-pods-all-ns
 ```
 
-### setup-argocd
+### GitOps - ArgoCD
 
-Installs ArgoCD using Helm with secure password management and health checks.
+#### argo:install
 
-**Variables:**
-
-- `ARGOCD_NAMESPACE`: Target namespace (default: argocd)
-- `ARGOCD_VERSION`: Version of ArgoCD to install (default: 5.51.6)
-- `ARGOCD_PASSWORD`: Admin password (default: admin)
+Install ArgoCD with secure password management.
 
 ```bash
-# Install with default settings
-task setup-argocd
+# Default installation
+task argo:install
 
-# Custom installation with specific version and namespace
-task setup-argocd \
-  ARGOCD_NAMESPACE=gitops \
+# Custom configuration
+task argo:install \
+  ARGOCD_NAMESPACE=argocd \
   ARGOCD_VERSION=5.51.6 \
-  ARGOCD_PASSWORD=superSecret123
-
-# After installation, access UI with:
-kubectl port-forward svc/argocd-server -n argocd 8080:443
+  ARGOCD_PASSWORD=mySecurePassword
 ```
 
-### setup-flux
+#### argo:uninstall
 
-Installs Flux using Helm with automatic controller health verification.
-
-**Variables:**
-
-- `FLUX_NAMESPACE`: Target namespace (default: flux-system)
-- `FLUX_VERSION`: Version of Flux to install (default: 2.14.1)
-- `FLUX_VALUES`: Path to custom values file (optional)
+Remove ArgoCD installation.
 
 ```bash
-# Install with default settings
-task setup-flux
+task argo:uninstall ARGOCD_NAMESPACE=argocd
+```
 
-# Custom installation
-task setup-flux \
-  FLUX_NAMESPACE=gitops \
+### GitOps - Flux
+
+#### flux:install
+
+Install Flux GitOps toolkit.
+
+```bash
+# Default installation
+task flux:install
+
+# Custom configuration
+task flux:install \
+  FLUX_NAMESPACE=flux-system \
   FLUX_VERSION=2.14.1 \
   FLUX_VALUES=./flux-values.yaml
 ```
 
-### uninstall-argocd
+#### flux:uninstall
 
-Cleanly removes ArgoCD installation and namespace.
-
-**Variables:**
-
-- `ARGOCD_NAMESPACE`: Namespace to remove (default: argocd)
+Remove Flux installation.
 
 ```bash
-# Remove default installation
-task uninstall-argocd
-
-# Remove from custom namespace
-task uninstall-argocd ARGOCD_NAMESPACE=gitops
+task flux:uninstall FLUX_NAMESPACE=flux-system
 ```
 
-### uninstall-flux
+#### flux:status
 
-Cleanly removes Flux installation and namespace.
-
-**Variables:**
-
-- `FLUX_NAMESPACE`: Namespace to remove (default: flux-system)
+Check the status of all Flux resources.
 
 ```bash
-# Remove default installation
-task uninstall-flux
+task flux:status
+```
 
-# Remove from custom namespace
-task uninstall-flux FLUX_NAMESPACE=gitops
+#### flux:logs
+
+View Flux controller logs.
+
+```bash
+# View all controller logs
+task flux:logs
+
+# Follow logs
+task flux:logs FOLLOW=true
+
+# Specific controller
+task flux:logs CONTROLLER=source-controller
+```
+
+#### flux:sync-all
+
+Sync all Flux resources (GitRepositories, Kustomizations, HelmReleases).
+
+```bash
+task flux:sync-all
+```
+
+#### flux:sync-gitrepositories
+
+Sync all GitRepository resources.
+
+```bash
+task flux:sync-gitrepositories
+```
+
+#### flux:sync-kustomizations
+
+Sync all Kustomization resources.
+
+```bash
+task flux:sync-kustomizations
+```
+
+#### flux:sync-helmreleases
+
+Sync all HelmRelease resources.
+
+```bash
+task flux:sync-helmreleases
+```
+
+#### flux:get-not-ready
+
+Get all Flux resources that are not in ready state.
+
+```bash
+task flux:get-not-ready
+```
+
+### Helm Operations
+
+#### helm:setup-helm
+
+Generic Helm chart installation with repository management.
+
+```bash
+task helm:setup-helm \
+  HELM_RELEASE=nginx \
+  HELM_CHART=bitnami/nginx \
+  HELM_NAMESPACE=web \
+  HELM_REPO_NAME=bitnami \
+  HELM_REPO_URL=https://charts.bitnami.com/bitnami \
+  HELM_VERSION=15.0.0 \
+  HELM_VALUES=./values.yaml
+```
+
+## 🔧 Usage Examples
+
+### Complete Development Stack with ArgoCD
+
+```yaml
+# In your Taskfile.yaml
+version: "3"
+includes:
+  k8s:
+    taskfile: ./path/to/k8s/tasks
+
+tasks:
+  setup-dev:
+    cmds:
+      - task: k8s:create-kind
+        vars:
+          CLUSTER_NAME: dev
+      - task: k8s:argo:install
+        vars:
+          ARGOCD_PASSWORD: "{{.PASSWORD}}"
+```
+
+### Flux GitOps Workflow
+
+```bash
+# Install Flux
+task flux:install
+
+# Check status
+task flux:status
+
+# Watch logs
+task flux:logs FOLLOW=true
+
+# Force sync all resources
+task flux:sync-all
+
+# Troubleshoot issues
+task flux:get-not-ready
+```
+
+### Cluster Maintenance
+
+```bash
+# Drain node for updates
+task drain-node NODE=worker-1
+
+# Perform maintenance...
+
+# Make node schedulable again
+task uncordon-node NODE=worker-1
 ```
 
 ## 🔍 Important Notes
 
-- All tasks include proper error handling and cleanup
-- ArgoCD installation includes:
-  - Secure password hashing using bcrypt
-  - LoadBalancer service type
-  - Insecure mode enabled for testing
-  - Kustomize plugins support
-  - Automatic readiness checks
-- Flux installation includes:
-  - Custom values support
-  - Automatic controller health verification
-  - Multi-tenant capabilities
+- **ArgoCD Installation**: Includes secure bcrypt password hashing,
+  LoadBalancer service, and Kustomize plugin support
+- **Flux Installation**: Automatic controller health checks and multi-tenant support
+- **Error Handling**: All tasks include proper error handling and cleanup
+- **Proxy Management**: Automatic proxy lifecycle management for API operations
+- **Namespace Cleanup**: Handles resource conflicts and retries automatically
 
-## 🔧 Extending Tasks
+## 📚 Task Namespacing
 
-Import these tasks in your own Taskfile:
+Tasks are organized hierarchically:
 
-```yaml
----
-version: "3"
-includes:
-  k8s: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/k8s/Taskfile.yaml"
+- Root tasks: Core Kubernetes operations
+- `argo:*`: ArgoCD GitOps tooling
+- `flux:*`: Flux GitOps tooling
+- `helm:*`: Helm package management
 
-tasks:
-  deploy-argo-dev-stack:
-    cmds:
-      # Create local cluster
-      - task: k8s:create-kind
+Access nested tasks using colon notation:
 
-      # Setup GitOps tools
-      - task: k8s:setup-argocd
-        vars:
-          ARGOCD_NAMESPACE: argocd
-          ARGOCD_PASSWORD: "{{.CLUSTER_PASSWORD}}"
-
-  deploy-flux-dev-stack:
-    cmds:
-      # Create local cluster
-      - task: k8s:create-kind
-
-      # Setup GitOps tools
-      - task: k8s:setup-flux
-        vars:
-          FLUX_NAMESPACE: flux-system
-          FLUX_VALUES: ./config/flux-values.yaml
+```bash
+task flux:status
+task argo:install
 ```
