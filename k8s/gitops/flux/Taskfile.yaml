@@ -1,0 +1,51 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  check-flux:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Check if Flux is installed
+    cmds:
+      - |
+        if ! command -v flux &> /dev/null; then
+          echo -e "Error: flux CLI not found. Please install the flux CLI."
+          echo "Installation instructions: https://fluxcd.io/flux/installation/#install-the-flux-cli"
+          exit 1
+        fi
+    silent: true
+
+  setup-flux:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Install Flux using Helm
+    vars:
+      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
+      FLUX_VERSION: '{{ .FLUX_VERSION | default "2.14.1" }}'
+      FLUX_VALUES: '{{ .FLUX_VALUES }}'
+    cmds:
+      - task: :setup-helm
+        vars:
+          HELM_RELEASE: flux
+          HELM_CHART: fluxcd-community/flux2
+          HELM_NAMESPACE: '{{ .FLUX_NAMESPACE }}'
+          HELM_VERSION: '{{ .FLUX_VERSION }}'
+          HELM_VALUES: '{{ .FLUX_VALUES }}'
+          HELM_REPO_NAME: fluxcd-community
+          HELM_REPO_URL: https://fluxcd-community.github.io/helm-charts
+      - |
+        echo "Waiting for Flux controllers to be ready..."
+        kubectl wait --for=condition=available --timeout=300s deployment -l app.kubernetes.io/instance=flux -n {{ .FLUX_NAMESPACE }}
+      - |
+        echo "Flux installed successfully"
+        echo "View resources with: kubectl get all -n {{ .FLUX_NAMESPACE }}"
+    silent: true
+
+  uninstall-flux:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Remove Flux installation
+    vars:
+      FLUX_NAMESPACE: '{{ .FLUX_NAMESPACE | default "flux-system" }}'
+    cmds:
+      - helm uninstall flux -n {{ .FLUX_NAMESPACE }}
+      - kubectl delete namespace {{ .FLUX_NAMESPACE }}
+    silent: true

@@ -1,0 +1,62 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  setup-argocd:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Install ArgoCD using Helm
+    vars:
+      ARGOCD_NAMESPACE: '{{ .ARGOCD_NAMESPACE | default "argocd" }}'
+      ARGOCD_VERSION: '{{ .ARGOCD_VERSION | default "5.51.6" }}'
+      ARGOCD_PASSWORD: '{{ .ARGOCD_PASSWORD | default "admin" }}'
+    cmds:
+      - |
+        # Check for Python bcrypt module
+        if ! python3 -c "import bcrypt" &> /dev/null; then
+          echo "Error: Python 'bcrypt' module not found"
+          echo "Please install it with: python3 -m pip install bcrypt"
+          exit 1
+        fi
+      - task: :setup-helm
+        vars:
+          HELM_RELEASE: argocd
+          HELM_CHART: argo/argo-cd
+          HELM_NAMESPACE: '{{ .ARGOCD_NAMESPACE }}'
+          HELM_VERSION: '{{ .ARGOCD_VERSION }}'
+          HELM_REPO_NAME: argo
+          HELM_REPO_URL: https://argoproj.github.io/argo-helm
+      - |
+        PASSWORD=$(python3 -c 'import bcrypt; import sys; print(bcrypt.hashpw(sys.argv[1].encode("utf-8"), bcrypt.gensalt(10)).decode("utf-8"))' '{{ .ARGOCD_PASSWORD }}')
+
+        helm upgrade argocd argo/argo-cd \
+          --namespace {{ .ARGOCD_NAMESPACE }} \
+          --version {{ .ARGOCD_VERSION }} \
+          --set server.extraArgs[0]=--insecure \
+          --set server.service.type=LoadBalancer \
+          --set configs.secret.argocdServerAdminPassword="$PASSWORD" \
+          --set configs.params.server.insecure=true \
+          --set configs.cm."application\.resourceTrackingMethod"=annotation \
+          --set configs.cm."timeout\.reconciliation"=180s \
+          --set configs.cm."admin\.enabled"=true \
+          --set configs.cm."kustomize\.buildOptions"="--enable-alpha-plugins" \
+          --reuse-values \
+          --wait
+      - |
+        echo "Waiting for ArgoCD server to be ready..."
+        kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n {{ .ARGOCD_NAMESPACE }}
+      - |
+        echo "ArgoCD installed successfully"
+        echo "Access UI with: kubectl port-forward svc/argocd-server -n {{ .ARGOCD_NAMESPACE }} 8080:443"
+        echo "Default admin password is: {{ .ARGOCD_PASSWORD }}"
+    silent: true
+
+  uninstall-argocd:
+    deps: [":check-helm", ":check-kubectl"]
+    desc: Remove ArgoCD installation
+    vars:
+      ARGOCD_NAMESPACE: '{{ .ARGOCD_NAMESPACE | default "argocd" }}'
+    cmds:
+      - helm uninstall argocd -n {{ .ARGOCD_NAMESPACE }}
+      - kubectl delete namespace {{ .ARGOCD_NAMESPACE }}
+    silent: true
