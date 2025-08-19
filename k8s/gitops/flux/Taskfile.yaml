@@ -4,7 +4,7 @@ version: "3"
 
 tasks:
   check-flux:
-    deps: [":check-helm", ":check-kubectl"]
+    deps: [":helm:check-helm", ":check-kubectl"]
     desc: Check if Flux is installed
     cmds:
       - |
@@ -13,6 +13,7 @@ tasks:
           echo "Installation instructions: https://fluxcd.io/flux/installation/#install-the-flux-cli"
           exit 1
         fi
+        echo "✓ Flux CLI is installed ($(flux version --client -o json | jq -r .flux))"
     silent: true
 
   get-not-ready:

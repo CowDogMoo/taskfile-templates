@@ -12,6 +12,7 @@ tasks:
           echo "Please install Helm: https://helm.sh/docs/intro/install/"
           exit 1
         fi
+        echo "✓ Helm is installed ($(helm version --short))"
     silent: true
 
   setup-helm:

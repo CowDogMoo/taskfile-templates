@@ -5,11 +5,14 @@ version: "3"
 set: [pipefail]
 
 includes:
-  gitops:
-    taskfile: ./gitops
-    optional: true
   helm:
     taskfile: ./helm
+  argo:
+    taskfile: ./gitops/argo
+    optional: true
+  flux:
+    taskfile: ./gitops/flux
+    optional: true
 
 tasks:
   # ============================================
@@ -24,6 +27,7 @@ tasks:
           echo "Please install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
           exit 1
         fi
+        echo "✓ kind is installed ($(kind version))"
     silent: true
 
   check-kubectl:
@@ -35,6 +39,7 @@ tasks:
           echo "Please install kubectl: https://kubernetes.io/docs/tasks/tools/"
           exit 1
         fi
+        echo "✓ kubectl is installed ($(kubectl version --client -o json | jq -r .clientVersion.gitVersion))"
     silent: true
 
   # ============================================

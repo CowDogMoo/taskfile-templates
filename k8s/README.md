@@ -131,115 +131,115 @@ task get-pods-all-ns
 
 ### GitOps - ArgoCD
 
-#### gitops:argo:install
+#### argo:install
 
 Install ArgoCD with secure password management.
 
 ```bash
 # Default installation
-task gitops:argo:install
+task argo:install
 
 # Custom configuration
-task gitops:argo:install \
+task argo:install \
   ARGOCD_NAMESPACE=argocd \
   ARGOCD_VERSION=5.51.6 \
   ARGOCD_PASSWORD=mySecurePassword
 ```
 
-#### gitops:argo:uninstall
+#### argo:uninstall
 
 Remove ArgoCD installation.
 
 ```bash
-task gitops:argo:uninstall ARGOCD_NAMESPACE=argocd
+task argo:uninstall ARGOCD_NAMESPACE=argocd
 ```
 
 ### GitOps - Flux
 
-#### gitops:flux:install
+#### flux:install
 
 Install Flux GitOps toolkit.
 
 ```bash
 # Default installation
-task gitops:flux:install
+task flux:install
 
 # Custom configuration
-task gitops:flux:install \
+task flux:install \
   FLUX_NAMESPACE=flux-system \
   FLUX_VERSION=2.14.1 \
   FLUX_VALUES=./flux-values.yaml
 ```
 
-#### gitops:flux:uninstall
+#### flux:uninstall
 
 Remove Flux installation.
 
 ```bash
-task gitops:flux:uninstall FLUX_NAMESPACE=flux-system
+task flux:uninstall FLUX_NAMESPACE=flux-system
 ```
 
-#### gitops:flux:status
+#### flux:status
 
 Check the status of all Flux resources.
 
 ```bash
-task gitops:flux:status
+task flux:status
 ```
 
-#### gitops:flux:logs
+#### flux:logs
 
 View Flux controller logs.
 
 ```bash
 # View all controller logs
-task gitops:flux:logs
+task flux:logs
 
 # Follow logs
-task gitops:flux:logs FOLLOW=true
+task flux:logs FOLLOW=true
 
 # Specific controller
-task gitops:flux:logs CONTROLLER=source-controller
+task flux:logs CONTROLLER=source-controller
 ```
 
-#### gitops:flux:sync-all
+#### flux:sync-all
 
 Sync all Flux resources (GitRepositories, Kustomizations, HelmReleases).
 
 ```bash
-task gitops:flux:sync-all
+task flux:sync-all
 ```
 
-#### gitops:flux:sync-gitrepositories
+#### flux:sync-gitrepositories
 
 Sync all GitRepository resources.
 
 ```bash
-task gitops:flux:sync-gitrepositories
+task flux:sync-gitrepositories
 ```
 
-#### gitops:flux:sync-kustomizations
+#### flux:sync-kustomizations
 
 Sync all Kustomization resources.
 
 ```bash
-task gitops:flux:sync-kustomizations
+task flux:sync-kustomizations
 ```
 
-#### gitops:flux:sync-helmreleases
+#### flux:sync-helmreleases
 
 Sync all HelmRelease resources.
 
 ```bash
-task gitops:flux:sync-helmreleases
+task flux:sync-helmreleases
 ```
 
-#### gitops:flux:get-not-ready
+#### flux:get-not-ready
 
 Get all Flux resources that are not in ready state.
 
 ```bash
-task gitops:flux:get-not-ready
+task flux:get-not-ready
 ```
 
 ### Helm Operations
@@ -276,7 +276,7 @@ tasks:
       - task: k8s:create-kind
         vars:
           CLUSTER_NAME: dev
-      - task: k8s:gitops:argo:install
+      - task: k8s:argo:install
         vars:
           ARGOCD_PASSWORD: "{{.PASSWORD}}"
 ```
@@ -285,19 +285,19 @@ tasks:
 
 ```bash
 # Install Flux
-task gitops:flux:install
+task flux:install
 
 # Check status
-task gitops:flux:status
+task flux:status
 
 # Watch logs
-task gitops:flux:logs FOLLOW=true
+task flux:logs FOLLOW=true
 
 # Force sync all resources
-task gitops:flux:sync-all
+task flux:sync-all
 
 # Troubleshoot issues
-task gitops:flux:get-not-ready
+task flux:get-not-ready
 ```
 
 ### Cluster Maintenance
@@ -326,12 +326,13 @@ task uncordon-node NODE=worker-1
 Tasks are organized hierarchically:
 
 - Root tasks: Core Kubernetes operations
-- `gitops:*`: GitOps tooling (ArgoCD, Flux)
+- `argo:*`: ArgoCD GitOps tooling
+- `flux:*`: Flux GitOps tooling
 - `helm:*`: Helm package management
 
 Access nested tasks using colon notation:
 
 ```bash
-task gitops:flux:status
-task gitops:argo:install
+task flux:status
+task argo:install
 ```
