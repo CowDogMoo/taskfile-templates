@@ -178,6 +178,49 @@ tasks:
   # ============================================
   # Troubleshooting & Debugging
   # ============================================
+  delete-error-pods:
+    deps: [check-kubectl]
+    desc: Delete all pods with CreateContainerError, ContainerCreating, or CrashLoopBackOff status
+    summary: |
+      Find and delete all pods across all namespaces that are in error states:
+      - CreateContainerError
+      - ContainerCreating (stuck)
+      - CrashLoopBackOff
+
+      Example:
+        task k8s:delete-error-pods
+    cmds:
+      - |
+        echo "Searching for pods in error states..."
+
+        # Get pods and filter for error states
+        ERROR_PODS=$(kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded | \
+          grep -E "CreateContainerError|ContainerCreating|CrashLoopBackOff" | \
+          awk '{print $1" "$2}')
+
+        if [ -z "$ERROR_PODS" ]; then
+          echo "No pods found in error states"
+          exit 0
+        fi
+
+        # Count the pods to be deleted
+        POD_COUNT=$(echo "$ERROR_PODS" | wc -l)
+        echo "Found $POD_COUNT pod(s) in error states:"
+        echo "$ERROR_PODS"
+        echo ""
+
+        # Delete each pod
+        echo "$ERROR_PODS" | while read ns pod; do
+          if [ -n "$ns" ] && [ -n "$pod" ]; then
+            echo "Deleting pod $pod in namespace $ns..."
+            kubectl delete pod -n $ns $pod --grace-period=0 --force 2>/dev/null || \
+              kubectl delete pod -n $ns $pod
+          fi
+        done
+
+        echo "Completed deletion of error pods"
+    silent: true
+
   destroy-stuck-ns:
     deps: [check-kubectl]
     desc: Remove finalizers from stuck Kubernetes namespaces
