@@ -2,69 +2,46 @@
 
 This directory contains reusable [Taskfile](https://taskfile.dev/) templates
 for running Renovate bot operations in Docker, making it easy to test and debug
-Renovate configurations—locally and reliably.
+Renovate configurations locally.
 
 ---
 
 ## 📋 Prerequisites
 
 - [Docker](https://www.docker.com/get-started) installed and running
-- [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
+- [GitHub CLI](https://cli.github.com/) installed and authenticated
+  (`gh auth login`) or `GITHUB_TOKEN` environment variable set
 - [Task](https://taskfile.dev/) installed
   (`brew install go-task/tap/go-task` or see official docs)
-- Node.js (including `npx`) is required for `lint`
-  (`node -v` and `npx -v` should work)
+- Git repository (for `test-local` task)
 
 ---
 
 ## 🎯 Available Tasks
 
-### check-repository-format
+### test-local
 
-Validates that the repository matches `org/repo` pattern.
-
-```sh
-task check-repository-format REPOSITORY=owner/repo
-```
-
----
-
-### docker-debug
-
-Runs Renovate in Docker with debugging enabled for a specific GitHub repository.
+Tests Renovate configuration locally using Docker against your current repository.
 
 ```bash
-export REPOSITORY="owner/repo"
-GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
+task renovate:test-local
 ```
-
-**Required variables:**
-
-- `REPOSITORY` (format: `owner/repo`)
-- `GITHUB_TOKEN` (GitHub personal access token or `gh auth token`)
 
 **Optional variables:**
 
-- `BRANCH`: Branch to run from (default: `main`)
-- `DEBUG`: Enable or disable debug logs (`true`/`false`, default: `false`)
-- `LOG_LEVEL`: Logging level (default: `info`)
-- `VALIDATE_REPO`: Verify repository existence and authentication (default: `true`)
-- `PLATFORM`: Platform to use (default: `github`)
-- `PLATFORM_COMMIT`: Allow Renovate to commit changes (default: `true`)
-- `CONFIG_FILE_PATH`: Path to the Renovate config file (default: `.github/renovate.json5`)
-- `CONFIG_FILE_NAME`: Name of the Renovate config file (default: `.github/renovate.json5`)
-- `GIT_AUTHOR`: Author for Renovate commits (default: `Renovate Bot <bot@renovateapp.com>`)
-- `ENDPOINT`: API endpoint (default: `https://api.github.com`)
-- `FORK`: Whether to fork the repo (`true`/`false`, default: `false`)
-- `INIT_SUBMODULES`: Initialize git submodules (`true`/`false`, default: `true`)
-- `INCLUDE_SUBMODULES`: Whether to include repository submodules
-  (`true`/`false`, default: `true`)
-- `RENOVATE_IMAGE`: Renovate Docker image (default: `ghcr.io/renovatebot/renovate:latest`)
+- `LOG_LEVEL`: Logging level (default: `debug`)
+- `CONFIG_FILE`: Path to the Renovate config file (default: `.github/renovate.json5`)
 - `LOG_FILE`: File to save logs (default: `renovate-debug.log`)
-- `CLEANUP`: Clean up credentials/files after run (`true`/`false`, default: `true`)
-- `CLEANUP_ALL`: Remove all cache, not just the git repo
-  (`true`/`false`, default: `false`)
-- `DOCKER_EXTRA_FLAGS`: Append extra Docker flags as string
+- `GITHUB_TOKEN`: GitHub personal access token (if not using `gh` CLI)
+
+**Features:**
+
+- Automatically detects GitHub token from `gh` CLI or `GITHUB_TOKEN`
+  environment variable
+- Validates that you're in a git repository
+- Checks that the config file exists before running
+- Saves detailed logs for debugging
+- Provides helpful commands to analyze results
 
 ---
 
@@ -73,42 +50,46 @@ GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
 Validate a Renovate JSON(5) config file using the official Renovate validator.
 
 ```sh
-task renovate:lint CONFIG_FILE_PATH=path/to/renovate.json5
+task renovate:lint
 ```
 
-(Default: `.github/renovate.json5`)
+**Optional variables:**
+
+- `CONFIG_FILE`: Path to the Renovate config file (default: `.github/renovate.json5`)
 
 ---
 
 ## 📝 Example Usage
 
-1. **Run Renovate in debug mode for a repository:**
+1. **Test Renovate configuration in your local repository:**
 
    ```bash
-   export GITHUB_TOKEN=$(gh auth token)
-   task renovate:docker-debug REPOSITORY=org/repo
+   # From your repository root
+   task renovate:test-local
    ```
 
-1. **Run Renovate with a specific branch:**
+1. **Test with a custom config file:**
 
    ```bash
-   export GITHUB_TOKEN=$(gh auth token)
-   task renovate:docker-debug REPOSITORY=org/repo BRANCH=feat/my-branch
+   task renovate:test-local CONFIG_FILE="custom-renovate.json5"
    ```
 
-1. **Use a custom Renovate config file:**
+1. **Test with different log level:**
 
    ```bash
-   export GITHUB_TOKEN=$(gh auth token)
-   task renovate:docker-debug REPOSITORY=org/repo CONFIG_FILE_PATH="custom-renovate.json5"
+   task renovate:test-local LOG_LEVEL=info
    ```
 
-1. **Run with a specific Renovate Docker image version:**
+1. **Validate your Renovate configuration:**
 
    ```bash
-   export REPOSITORY="angular/angular"
-   export GITHUB_TOKEN=$(gh auth token)
-   task renovate:docker-debug REPOSITORY=org/repo RENOVATE_IMAGE="ghcr.io/renovatebot/renovate:35.69.3"
+   task renovate:lint
+   ```
+
+1. **Validate a custom config file:**
+
+   ```bash
+   task renovate:lint CONFIG_FILE="path/to/renovate.json"
    ```
 
 ---
@@ -125,19 +106,17 @@ includes:
     optional: true
 
 tasks:
-  renovate-my-repo:
+  test-my-config:
     cmds:
-      - export REPOSITORY="myorg/myrepo"
-      - GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
-
-  renovate-custom:
-    cmds:
-      - task: renovate:docker-debug
+      - task: renovate:test-local
         vars:
-          REPOSITORY: "{{.REPO}}"
+          CONFIG_FILE: "custom/renovate.json5"
           LOG_LEVEL: "info"
-          FORK: "true"
-          CONFIG_FILE_PATH: "custom/path/renovate.json5"
+
+  validate-all:
+    cmds:
+      - task: renovate:lint
+      - task: renovate:test-local
 ```
 
 _If including Taskfiles remotely, you may need `TASK_X_REMOTE_TASKFILES=1`
@@ -148,13 +127,25 @@ as an environment variable._
 ## 🔍 Important Notes
 
 - Docker must be up and running before use
-- `gh` (GitHub CLI) must be authenticated
-- The GitHub token must have access to the target repository
-- Temporary files/cache/logs are stored in `.cache`
+- The `test-local` task must be run from within a git repository
+- GitHub token is automatically detected from `gh` CLI or `GITHUB_TOKEN`
+  environment variable
+- The `test-local` task uses `--platform=local` to test against your local repository
 - Logs are saved as `renovate-debug.log` by default
-- The container runs as your current local user (avoids permission errors)
-- **To test _local_ config changes for `.github/renovate.json5`, you must either:**
-  1. Push your config changes to the repo first, _or_
-  1. Specify your config path with `CONFIG_FILE_PATH` pointing to a local file
-- Uses `ghcr.io/renovatebot/renovate:latest` by default (override with `RENOVATE_IMAGE`)
-- The debug run clones the repository to a temp dir and overlays your config if specified
+- The lint task validates configuration syntax and schema
+- Uses `renovate/renovate` Docker image (latest version)
+
+### Analyzing Results
+
+After running `test-local`, you can analyze the results:
+
+```bash
+# Check for detected package updates
+grep -i 'packageFiles with updates' renovate-debug.log
+
+# Check custom managers
+grep -i 'customManager' renovate-debug.log
+
+# Check for errors
+grep -i 'error' renovate-debug.log
+```
