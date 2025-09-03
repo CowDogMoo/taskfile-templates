@@ -68,9 +68,9 @@ tasks:
         cd "$TEMP_GIT_DIR"
 
         # Clone the target repository with the specified branch
-        echo "Cloning {{.REPOSITORY}} (branch: $BRANCH) into temporary directory..."
-        git clone --depth=1 --branch "$BRANCH" "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" . || {
-          echo "Error: Branch '$BRANCH' not found. Falling back to default branch."
+        echo "Cloning {{.REPOSITORY}} (branch: {{.BRANCH}}) into temporary directory..."
+        git clone --depth=1 --branch "{{.BRANCH}}" "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" . || {
+          echo "Error: Branch '{{.BRANCH}}' not found. Falling back to default branch."
           git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{.REPOSITORY}}.git" .
         }
 
@@ -83,7 +83,7 @@ tasks:
         CONFIG_PATH="$BASE_DIR/{{.CONFIG_FILE_PATH | default ".github/renovate.json5"}}"
         echo ""
         echo "IMPORTANT: To test your local Renovate configuration changes, you must:"
-        echo "  1. Push your configuration to the remote branch '$BRANCH' in {{.REPOSITORY}}"
+        echo "  1. Push your configuration to the remote branch '{{.BRANCH}}' in {{.REPOSITORY}}"
         echo "  2. OR specify a different branch using the BRANCH parameter where your config changes exist"
         echo ""
         echo "Without pushing your changes, this will test the configuration already present in the repository."
@@ -130,7 +130,7 @@ tasks:
           -e RENOVATE_REPOSITORY="{{.REPOSITORY}}" \
           -e RENOVATE_FORK="{{.FORK | default "false"}}" \
           -e RENOVATE_INCLUDE_SUBMODULES="{{.INCLUDE_SUBMODULES | default "true"}}" \
-          -e RENOVATE_TARGET_BRANCH="$BRANCH" \
+          -e RENOVATE_TARGET_BRANCH="{{.BRANCH}}" \
           -e GIT_CONFIG_GLOBAL="/tmp/gitconfig" \
           -e HOME="/tmp" \
           -e XDG_CONFIG_HOME="/tmp/config" \
