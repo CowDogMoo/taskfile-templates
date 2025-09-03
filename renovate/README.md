@@ -12,7 +12,7 @@ Renovate configurations—locally and reliably.
 - [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
 - [Task](https://taskfile.dev/) installed
   (`brew install go-task/tap/go-task` or see official docs)
-- Node.js (including `npx`) is required for `renovate-lint`
+- Node.js (including `npx`) is required for `lint`
   (`node -v` and `npx -v` should work)
 
 ---
@@ -29,13 +29,13 @@ task check-repository-format REPOSITORY=owner/repo
 
 ---
 
-### renovate-docker-debug
+### docker-debug
 
 Runs Renovate in Docker with debugging enabled for a specific GitHub repository.
 
 ```sh
 export REPOSITORY="owner/repo"
-GITHUB_TOKEN=$(gh auth token) task renovate:renovate-docker-debug
+GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
 ```
 
 **Required variables:**
@@ -59,19 +59,21 @@ GITHUB_TOKEN=$(gh auth token) task renovate:renovate-docker-debug
 - `VALIDATE_REPO`: Verify repository existence and authentication (default: `true`)
 - `BRANCH`: Branch to run from (default: `main`)
 - `INIT_SUBMODULES`: Initialize git submodules (`true`/`false`, default: `true`)
-- `INCLUDE_SUBMODULES`: Whether to include repository submodules (`true`/`false`, default: `true`)
+- `INCLUDE_SUBMODULES`: Whether to include repository submodules
+  (`true`/`false`, default: `true`)
 - `CLEANUP`: Clean up credentials/files after run (`true`/`false`, default: `true`)
-- `CLEANUP_ALL`: Remove all cache, not just the git repo (`true`/`false`, default: `false`)
+- `CLEANUP_ALL`: Remove all cache, not just the git repo
+  (`true`/`false`, default: `false`)
 - `DOCKER_EXTRA_FLAGS`: Append extra Docker flags as string
 
 ---
 
-### renovate-lint
+### lint
 
 Validate a Renovate JSON(5) config file using the official Renovate validator.
 
 ```sh
-task renovate:renovate-lint CONFIG_FILE_PATH=path/to/renovate.json5
+task renovate:lint CONFIG_FILE_PATH=path/to/renovate.json5
 ```
 
 (Default: `.github/renovate.json5`)
@@ -82,18 +84,23 @@ task renovate:renovate-lint CONFIG_FILE_PATH=path/to/renovate.json5
 
 1. **Run Renovate in debug mode for a repository:**
 
-   ```sh
-   export REPOSITORY="microsoft/vscode"
+   ```bash
    export GITHUB_TOKEN=$(gh auth token)
-   task renovate:renovate-docker-debug
+   task renovate:docker-debug REPOSITORY=org/repo
+   ```
+
+1. **Run Renovate with a specific branch:**
+
+   ```bash
+   export GITHUB_TOKEN=$(gh auth token)
+   task renovate:docker-debug REPOSITORY=org/repo BRANCH=feat/my-branch
    ```
 
 1. **Use a custom Renovate config file:**
 
-   ```sh
-   export REPOSITORY="facebook/react"
+   ```bash
    export GITHUB_TOKEN=$(gh auth token)
-   task renovate:renovate-docker-debug CONFIG_FILE_PATH="custom-renovate.json5"
+   task renovate:docker-debug REPOSITORY=org/repo CONFIG_FILE_PATH="custom-renovate.json5"
    ```
 
 1. **Run with a specific Renovate Docker image version:**
@@ -101,7 +108,7 @@ task renovate:renovate-lint CONFIG_FILE_PATH=path/to/renovate.json5
    ```bash
    export REPOSITORY="angular/angular"
    export GITHUB_TOKEN=$(gh auth token)
-   task renovate:renovate-docker-debug RENOVATE_IMAGE="ghcr.io/renovatebot/renovate:35.69.3"
+   task renovate:docker-debug REPOSITORY=org/repo RENOVATE_IMAGE="ghcr.io/renovatebot/renovate:35.69.3"
    ```
 
 ---
@@ -121,11 +128,11 @@ tasks:
   renovate-my-repo:
     cmds:
       - export REPOSITORY="myorg/myrepo"
-      - GITHUB_TOKEN=$(gh auth token) task renovate:renovate-docker-debug
+      - GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
 
   renovate-custom:
     cmds:
-      - task: renovate:renovate-docker-debug
+      - task: renovate:docker-debug
         vars:
           REPOSITORY: "{{.REPO}}"
           LOG_LEVEL: "info"
@@ -133,7 +140,8 @@ tasks:
           CONFIG_FILE_PATH: "custom/path/renovate.json5"
 ```
 
-_If including Taskfiles remotely, you may need `TASK_X_REMOTE_TASKFILES=1` as an environment variable._
+_If including Taskfiles remotely, you may need `TASK_X_REMOTE_TASKFILES=1`
+as an environment variable._
 
 ---
 

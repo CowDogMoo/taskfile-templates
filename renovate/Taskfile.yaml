@@ -26,7 +26,7 @@ tasks:
         fi
     silent: true
 
-  renovate-docker-debug:
+  docker-debug:
     desc: "Run Renovate in a Docker container with debugging enabled"
     deps:
       - check-repository-format
@@ -162,7 +162,7 @@ tasks:
           fi
         fi
 
-  renovate-lint:
+  lint:
     desc: "Validate Renovate configuration using renovate-config-validator"
     deps:
       - check-npx
