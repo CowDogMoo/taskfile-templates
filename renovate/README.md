@@ -33,7 +33,7 @@ task check-repository-format REPOSITORY=owner/repo
 
 Runs Renovate in Docker with debugging enabled for a specific GitHub repository.
 
-```sh
+```bash
 export REPOSITORY="owner/repo"
 GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
 ```
@@ -45,22 +45,22 @@ GITHUB_TOKEN=$(gh auth token) task renovate:docker-debug
 
 **Optional variables:**
 
-- `LOG_LEVEL`: Logging level (default: `debug`)
-- `DEBUG`: Enable or disable debug logs (`true`/`false`, default: `true`)
+- `BRANCH`: Branch to run from (default: `main`)
+- `DEBUG`: Enable or disable debug logs (`true`/`false`, default: `false`)
+- `LOG_LEVEL`: Logging level (default: `info`)
+- `VALIDATE_REPO`: Verify repository existence and authentication (default: `true`)
+- `PLATFORM`: Platform to use (default: `github`)
 - `PLATFORM_COMMIT`: Allow Renovate to commit changes (default: `true`)
-- `CONFIG_FILE_NAME`: Name of the Renovate config file (default: `.github/renovate.json5`)
 - `CONFIG_FILE_PATH`: Path to the Renovate config file (default: `.github/renovate.json5`)
+- `CONFIG_FILE_NAME`: Name of the Renovate config file (default: `.github/renovate.json5`)
 - `GIT_AUTHOR`: Author for Renovate commits (default: `Renovate Bot <bot@renovateapp.com>`)
-- `PLATFORM`: Platform to use, defaults to `github`
 - `ENDPOINT`: API endpoint (default: `https://api.github.com`)
 - `FORK`: Whether to fork the repo (`true`/`false`, default: `false`)
-- `RENOVATE_IMAGE`: Renovate Docker image (default: `ghcr.io/renovatebot/renovate:latest`)
-- `LOG_FILE`: File to save logs (default: `renovate-debug.log`)
-- `VALIDATE_REPO`: Verify repository existence and authentication (default: `true`)
-- `BRANCH`: Branch to run from (default: `main`)
 - `INIT_SUBMODULES`: Initialize git submodules (`true`/`false`, default: `true`)
 - `INCLUDE_SUBMODULES`: Whether to include repository submodules
   (`true`/`false`, default: `true`)
+- `RENOVATE_IMAGE`: Renovate Docker image (default: `ghcr.io/renovatebot/renovate:latest`)
+- `LOG_FILE`: File to save logs (default: `renovate-debug.log`)
 - `CLEANUP`: Clean up credentials/files after run (`true`/`false`, default: `true`)
 - `CLEANUP_ALL`: Remove all cache, not just the git repo
   (`true`/`false`, default: `false`)

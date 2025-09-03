@@ -6,7 +6,7 @@ includes:
 
 tasks:
   check-npx:
-    desc: "Validate that npx is installed (for Node.js tasks)"
+    desc: Validate that npx is installed (for Node.js tasks)
     cmds:
       - |
         if ! command -v npx &> /dev/null; then
@@ -16,7 +16,7 @@ tasks:
     silent: true
 
   check-repository-format:
-    desc: "Validate repository format matches org/repo pattern"
+    desc: Validate repository format matches org/repo pattern
     cmds:
       - |
         if [[ ! "{{.REPOSITORY}}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
@@ -27,7 +27,7 @@ tasks:
     silent: true
 
   docker-debug:
-    desc: "Run Renovate in a Docker container with debugging enabled"
+    desc: Run Renovate in a Docker container with debugging enabled
     deps:
       - check-repository-format
       - task: docker:check-docker
@@ -35,6 +35,8 @@ tasks:
       BRANCH: '{{.BRANCH | default "main"}}'
       GITHUB_TOKEN: '{{.GITHUB_TOKEN}}'
       REPOSITORY: '{{.REPOSITORY}}'
+      DEBUG: '{{.DEBUG | default "false"}}'
+      LOG_LEVEL: '{{.LOG_LEVEL | default "info"}}'
     requires:
       vars:
         - GITHUB_TOKEN
@@ -116,10 +118,10 @@ tasks:
 
         # Run Renovate in Docker with configurable parameters
         docker run --rm -it \
-          -e LOG_LEVEL="{{.LOG_LEVEL | default "debug"}}" \
+          -e LOG_LEVEL="{{.LOG_LEVEL}}" \
           -e RENOVATE_LOCAL_DIR="/tmp/renovate/repository" \
           -e RENOVATE_CONFIG_FILE="/usr/src/app/renovate.json5" \
-          -e RENOVATE_DEBUG="{{.DEBUG | default "true"}}" \
+          -e RENOVATE_DEBUG="{{.DEBUG}}" \
           -e RENOVATE_PLATFORM_COMMIT="{{.PLATFORM_COMMIT | default "true"}}" \
           -e RENOVATE_ONBOARDING_CONFIG_FILE_NAME="{{.CONFIG_FILE_NAME | default ".github/renovate.json5"}}" \
           -e RENOVATE_BASE_DIR="/tmp/renovate/repository" \
@@ -161,9 +163,10 @@ tasks:
             rm -rf "$TEMP_GIT_DIR"
           fi
         fi
+    silent: true
 
   lint:
-    desc: "Validate Renovate configuration using renovate-config-validator"
+    desc: Validate Renovate configuration using renovate-config-validator
     deps:
       - check-npx
     cmds:
