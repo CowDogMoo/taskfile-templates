@@ -21,7 +21,6 @@ tasks:
       - task: docker:check-docker
     vars:
       LOG_LEVEL: '{{.LOG_LEVEL | default "debug"}}'
-      CONFIG_FILE: '{{.CONFIG_FILE | default ".github/renovate.json5"}}'
       LOG_FILE: '{{.LOG_FILE | default "renovate-debug.log"}}'
     cmds:
       - |
@@ -31,9 +30,22 @@ tasks:
           exit 1
         fi
 
-        # Check if config file exists
-        if [ ! -f "{{.CONFIG_FILE}}" ]; then
-          echo "Error: Config file {{.CONFIG_FILE}} not found"
+        # Check for Renovate config file in standard locations
+        CONFIG_FOUND=false
+        for config_file in renovate.json renovate.json5 .github/renovate.json .github/renovate.json5 .gitlab/renovate.json .gitlab/renovate.json5 .renovaterc .renovaterc.json .renovaterc.json5; do
+          if [ -f "$config_file" ]; then
+            echo "✓ Found Renovate config: $config_file"
+            CONFIG_FOUND=true
+            break
+          fi
+        done
+
+        if [ "$CONFIG_FOUND" = false ]; then
+          echo "Error: No Renovate configuration file found in standard locations:"
+          echo "  - renovate.json, renovate.json5"
+          echo "  - .github/renovate.json, .github/renovate.json5"
+          echo "  - .gitlab/renovate.json, .gitlab/renovate.json5"
+          echo "  - .renovaterc, .renovaterc.json, .renovaterc.json5"
           exit 1
         fi
 
@@ -51,17 +63,15 @@ tasks:
         docker run --rm -v "$(pwd)":/repo -w /repo \
           -e LOG_LEVEL={{.LOG_LEVEL}} \
           -e GITHUB_COM_TOKEN="$TOKEN" \
-          -e RENOVATE_CONFIG_FILE="{{.CONFIG_FILE}}" \
           renovate/renovate --platform=local 2>&1 | tee {{.LOG_FILE}}
 
         echo ""
         echo "✅ Renovate test complete. Check {{.LOG_FILE}} for details."
         echo ""
-        echo "To check for detected updates:"
-        echo "  grep -i 'packageFiles with updates' {{.LOG_FILE}}"
-        echo ""
-        echo "To check custom managers:"
-        echo "  grep -i 'customManager' {{.LOG_FILE}}"
+        echo "📊 Quick Summary:"
+        echo "  Dependencies found: $(grep -o '"depCount": [0-9]*' {{.LOG_FILE}} | tail -1 | cut -d' ' -f2)"
+        echo "  Updates available: $(grep '"newVersion":' {{.LOG_FILE}} | wc -l | tr -d ' ')"
+    silent: true
 
   lint:
     desc: Validate Renovate configuration using renovate-config-validator
