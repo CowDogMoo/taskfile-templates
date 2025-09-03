@@ -174,11 +174,66 @@ Requires `.github/workflows/molecule.yaml` (see [workstation-collection example]
 
 ### run-molecule-tests
 
-Runs `molecule test` for **all roles** in `roles/`, logs output to `logs/molecule_tests.log`.
+Runs `molecule test` for one or more roles in the `roles/` directory. Supports
+testing individual roles, multiple roles, or all roles at once. Each role's
+output is logged to a separate file in the `logs/` directory.
+
+**Optional Variables:**
+
+- `ROLES`: Comma-separated list of role names, or `*` for all roles (default: `*`)
+
+**Usage Examples:**
 
 ```bash
+# Run tests for all roles (default)
 task run-molecule-tests
+
+# Run tests for all roles explicitly
+task run-molecule-tests ROLES="*"
+
+# Run test for a single role
+task run-molecule-tests ROLES="logging"
+
+# Run tests for multiple specific roles
+task run-molecule-tests ROLES="logging,asdf,user_setup"
 ```
+
+**Output:**
+
+- Individual log files per role: `logs/molecule_tests_<role_name>.log`
+- Clear visual separation between role tests in console output
+- Fails fast if any role test fails
+
+**Example Output:**
+
+````bash
+Running molecule tests for specified roles: logging,asdf
+=========================================
+Testing role: logging
+=========================================
+--> Test matrix
+
+└── default
+    ├── dependency
+    ├── cleanup
+    ├── destroy
+    ├── syntax
+    ├── create
+    ├── prepare
+    ├── converge
+    ├── idempotence
+    ├── side_effect
+    ├── verify
+    ├── cleanup
+    └── destroy
+...
+=========================================
+Testing role: asdf
+=========================================
+...
+=========================================
+All molecule tests completed successfully!
+Logs available in: logs/
 
 ### update-galaxy-version
 
@@ -191,7 +246,7 @@ Updates the `version` field in `galaxy.yml` (if present) to match NEXT_VERSION.
 
 ```bash
 task update-galaxy-version NEXT_VERSION=1.0.0
-```
+````
 
 If `galaxy.yml` is not present, the step is skipped.
 

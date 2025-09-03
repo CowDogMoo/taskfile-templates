@@ -127,17 +127,62 @@ tasks:
         fi
 
   run-molecule-tests:
-    desc: "Run Molecule tests for all roles"
+    desc: "Run Molecule tests for one or more roles. Usage: task run-molecule-tests [ROLES='role1,role2'] or [ROLES='*'] for all"
+    vars:
+      ROLES: '{{.ROLES | default "*"}}'
     cmds:
       - |
         mkdir -p logs
         export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
-        for role in roles/*; do
-          if [[ -d "$role" ]]; then
-            echo "Running molecule tests for role $role"
-            (cd "$role" && molecule test) | tee -a logs/molecule_tests.log || exit 1
-          fi
-        done
+
+        # Convert comma-separated list to array (portable way)
+        ROLES_INPUT="{{.ROLES}}"
+
+        # If ROLES is "*" or empty, test all roles
+        if [[ "$ROLES_INPUT" == "*" ]] || [[ -z "$ROLES_INPUT" ]]; then
+          echo "Running molecule tests for ALL roles..."
+          for role in roles/*; do
+            if [[ -d "$role" ]]; then
+              role_name=$(basename "$role")
+              echo "========================================="
+              echo "Testing role: $role_name"
+              echo "========================================="
+              (cd "$role" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                echo "ERROR: Molecule tests failed for $role_name"
+                exit 1
+              fi
+            fi
+          done
+        else
+          # Test specific roles - handle comma-separated list
+          echo "Running molecule tests for specified roles: $ROLES_INPUT"
+
+          # Use a while loop with IFS to split the comma-separated values
+          echo "$ROLES_INPUT" | tr ',' '\n' | while IFS= read -r role_name; do
+            # Trim whitespace
+            role_name=$(echo "$role_name" | xargs)
+            role_path="roles/${role_name}"
+
+            if [[ -d "$role_path" ]]; then
+              echo "========================================="
+              echo "Testing role: $role_name"
+              echo "========================================="
+              (cd "$role_path" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                echo "ERROR: Molecule tests failed for $role_name"
+                exit 1
+              fi
+            else
+              echo "ERROR: Role directory not found: $role_path"
+              exit 1
+            fi
+          done
+        fi
+
+        echo "========================================="
+        echo "All molecule tests completed successfully!"
+        echo "Logs available in: logs/"
     silent: true
 
   update-galaxy-version:
