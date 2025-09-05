@@ -186,17 +186,25 @@ tasks:
       - CreateContainerError
       - ContainerCreating (stuck)
       - CrashLoopBackOff
+      - Terminating (stuck)
 
       Example:
         task k8s:delete-error-pods
     cmds:
       - |
+        set +e  # Don't exit on error
         echo "Searching for pods in error states..."
 
-        # Get pods and filter for error states
-        ERROR_PODS=$(kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded | \
-          grep -E "CreateContainerError|ContainerCreating|CrashLoopBackOff" | \
-          awk '{print $1" "$2}')
+        # Get all pods and their status
+        TEMP_FILE=$(mktemp)
+        kubectl get pods -A --no-headers -o wide > "$TEMP_FILE" 2>/dev/null
+
+        # Filter for error states
+        ERROR_PODS=$(cat "$TEMP_FILE" | \
+          grep -E "CreateContainerError|ContainerCreating|CrashLoopBackOff|Terminating" | \
+          awk '{print $1" "$2}' || true)
+
+        rm -f "$TEMP_FILE"
 
         if [ -z "$ERROR_PODS" ]; then
           echo "No pods found in error states"
@@ -204,21 +212,38 @@ tasks:
         fi
 
         # Count the pods to be deleted
-        POD_COUNT=$(echo "$ERROR_PODS" | wc -l)
+        POD_COUNT=$(echo "$ERROR_PODS" | wc -l | tr -d ' ')
         echo "Found $POD_COUNT pod(s) in error states:"
-        echo "$ERROR_PODS"
+        echo "$ERROR_PODS" | while read ns pod; do
+          [ -n "$ns" ] && [ -n "$pod" ] && echo "  - $ns/$pod"
+        done
         echo ""
 
         # Delete each pod
+        SUCCESS_COUNT=0
+        FAIL_COUNT=0
         echo "$ERROR_PODS" | while read ns pod; do
           if [ -n "$ns" ] && [ -n "$pod" ]; then
-            echo "Deleting pod $pod in namespace $ns..."
-            kubectl delete pod -n $ns $pod --grace-period=0 --force 2>/dev/null || \
-              kubectl delete pod -n $ns $pod
+            echo -n "Deleting pod $pod in namespace $ns... "
+            if kubectl delete pod -n "$ns" "$pod" --grace-period=0 --force >/dev/null 2>&1; then
+              echo "✓"
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            else
+              if kubectl get pod -n "$ns" "$pod" >/dev/null 2>&1; then
+                echo "✗ (failed to delete)"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+              else
+                echo "✓ (already deleted)"
+                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+              fi
+            fi
           fi
         done
 
-        echo "Completed deletion of error pods"
+        echo ""
+        echo "Completed: Successfully handled $SUCCESS_COUNT pod(s)"
+        [ $FAIL_COUNT -gt 0 ] && echo "Warning: Failed to delete $FAIL_COUNT pod(s)"
+        exit 0
     silent: true
 
   destroy-stuck-ns:
