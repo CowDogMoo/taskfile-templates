@@ -204,23 +204,39 @@ task flux:logs CONTROLLER=source-controller
 
 #### flux:sync-all
 
-Sync all Flux resources (GitRepositories, Kustomizations, HelmReleases).
+Force reconciliation of all Flux and ExternalSecrets resources.
 
 ```bash
 task flux:sync-all
 ```
 
+This syncs:
+
+- GitRepositories
+- OCIRepositories
+- Kustomizations
+- HelmReleases (with force upgrade)
+- ExternalSecrets
+
 #### flux:sync-gitrepositories
 
-Sync all GitRepository resources.
+Force reconciliation of all GitRepository resources.
 
 ```bash
 task flux:sync-gitrepositories
 ```
 
+#### flux:sync-ocirepositories
+
+Force reconciliation of all OCIRepository resources.
+
+```bash
+task flux:sync-ocirepositories
+```
+
 #### flux:sync-kustomizations
 
-Sync all Kustomization resources.
+Force reconciliation of all Kustomization resources.
 
 ```bash
 task flux:sync-kustomizations
@@ -228,10 +244,21 @@ task flux:sync-kustomizations
 
 #### flux:sync-helmreleases
 
-Sync all HelmRelease resources.
+Force reconciliation and upgrade of all HelmRelease resources.
 
 ```bash
 task flux:sync-helmreleases
+```
+
+**Note**: This applies both `requestedAt` and `forceAt` annotations to ensure
+upgrades are performed even when no changes are detected.
+
+#### flux:sync-externalsecrets
+
+Force synchronization of all ExternalSecrets resources.
+
+```bash
+task flux:sync-externalsecrets
 ```
 
 #### flux:get-not-ready
@@ -296,6 +323,10 @@ task flux:logs FOLLOW=true
 # Force sync all resources
 task flux:sync-all
 
+# Force sync specific resource types
+task flux:sync-helmreleases  # Forces helm upgrades
+task flux:sync-externalsecrets  # Refreshes secrets from external sources
+
 # Troubleshoot issues
 task flux:get-not-ready
 ```
@@ -313,6 +344,19 @@ task uncordon-node NODE=worker-1
 ```
 
 ## 🔍 Important Notes
+
+### Flux Synchronization
+
+- **Resource Annotations**: All sync tasks use proper field managers
+  (`flux-client-side-apply`) for ownership tracking
+- **HelmRelease Sync**: Applies both `requestedAt` and `forceAt` annotations to
+  ensure upgrades happen even without changes
+- **ExternalSecrets**: Uses the `force-sync` annotation specific to the
+  external-secrets operator
+- **Timestamp-based**: All sync operations use Unix timestamps to ensure unique
+  reconciliation requests
+
+### General Notes
 
 - **ArgoCD Installation**: Includes secure bcrypt password hashing,
   LoadBalancer service, and Kustomize plugin support

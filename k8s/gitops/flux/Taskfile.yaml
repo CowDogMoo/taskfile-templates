@@ -84,8 +84,10 @@ tasks:
     desc: Sync all Flux resources
     cmds:
       - task: sync-gitrepositories
+      - task: sync-ocirepositories
       - task: sync-kustomizations
       - task: sync-helmreleases
+      - task: sync-externalsecrets
     silent: true
 
   sync-gitrepositories:
@@ -97,6 +99,25 @@ tasks:
           SUCCESS_MSG: "GitRepositories synced successfully."
     silent: true
 
+  sync-externalsecrets:
+    desc: Sync all ExternalSecrets
+    cmds:
+      - task: sync-resource
+        vars:
+          RESOURCE_TYPE: externalsecrets
+          SUCCESS_MSG: "ExternalSecrets synced successfully."
+          ANNOTATION_KEY: "force-sync"
+    silent: true
+
+  sync-ocirepositories:
+    desc: Sync all OCIRepositories
+    cmds:
+      - task: sync-resource
+        vars:
+          RESOURCE_TYPE: ocirepositories
+          SUCCESS_MSG: "OCIRepositories synced successfully."
+    silent: true
+
   sync-helmreleases:
     desc: Sync all Flux HelmReleases
     cmds:
@@ -104,6 +125,7 @@ tasks:
         vars:
           RESOURCE_TYPE: helmreleases
           SUCCESS_MSG: "HelmReleases synced successfully."
+          EXTRA_ANNOTATIONS: "reconcile.fluxcd.io/forceAt"
     silent: true
 
   sync-kustomizations:
@@ -122,35 +144,39 @@ tasks:
     vars:
       RESOURCE_TYPE: "{{.RESOURCE_TYPE}}"
       SUCCESS_MSG: "{{.SUCCESS_MSG}}"
+      EXTRA_ANNOTATIONS: "{{.EXTRA_ANNOTATIONS}}"
+      ANNOTATION_KEY: "{{.ANNOTATION_KEY | default \"reconcile.fluxcd.io/requestedAt\"}}"
       TIMESTAMP:
         sh: date +%s
     cmds:
       - |
         echo "Syncing {{.RESOURCE_TYPE}}..."
 
-        # Get all resources and annotate them
-        kubectl get {{.RESOURCE_TYPE}} --all-namespaces --no-headers 2>/dev/null | while read -r line; do
-          if [ -z "$line" ]; then
-            continue
-          fi
+        # Build annotation string
+        annotations="{{.ANNOTATION_KEY}}={{.TIMESTAMP}}"
+        if [ -n "{{.EXTRA_ANNOTATIONS}}" ]; then
+          annotations="$annotations {{.EXTRA_ANNOTATIONS}}={{.TIMESTAMP}}"
+        fi
 
-          namespace=$(echo "$line" | awk '{print $1}')
-          name=$(echo "$line" | awk '{print $2}')
+        kubectl get {{.RESOURCE_TYPE}} --all-namespaces --no-headers \
+          --ignore-not-found 2>/dev/null \
+          | while read -r namespace name _; do
 
           if [ -z "$namespace" ] || [ -z "$name" ]; then
             continue
           fi
 
           echo "Annotating {{.RESOURCE_TYPE}}/$name in namespace $namespace"
-          kubectl -n "$namespace" annotate {{.RESOURCE_TYPE}}/"$name" \
-            "reconcile.fluxcd.io/requestedAt={{.TIMESTAMP}}" \
+          kubectl -n "$namespace" annotate {{.RESOURCE_TYPE}} "$name" \
+            $annotations \
+            --field-manager flux-client-side-apply \
             --overwrite || {
-            echo -e "Error: Failed to annotate {{.RESOURCE_TYPE}}/$name in namespace $namespace"
+            echo "Error: Failed to annotate {{.RESOURCE_TYPE}}/$name in namespace $namespace"
             exit 1
           }
         done
 
-        echo -e "{{.SUCCESS_MSG}}"
+        echo "{{.SUCCESS_MSG}}"
     silent: true
 
   uninstall:
