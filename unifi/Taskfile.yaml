@@ -5,8 +5,7 @@ version: "3"
 vars:
   # The UBIQUITI_CONTROLLER_HOST should be provided via environment variable
   # or explicitly set when running the task
-  UBIQUITI_CONTROLLER_HOST:
-    sh: if [ -z "${UBIQUITI_CONTROLLER_HOST}" ]; then echo "Please set UBIQUITI_CONTROLLER_HOST"; exit 1; else echo "${UBIQUITI_CONTROLLER_HOST}"; fi
+  UBIQUITI_CONTROLLER_HOST: '{{.UBIQUITI_CONTROLLER_HOST | default "localhost"}}'
   UBIQUITI_BASE_URL: "https://{{.UBIQUITI_CONTROLLER_HOST}}"
 
 tasks:
