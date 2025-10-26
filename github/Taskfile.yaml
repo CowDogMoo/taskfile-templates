@@ -329,6 +329,53 @@ tasks:
       vars: []
     silent: true
 
+  pr-merge:
+    desc: "Merge the current branch's PR with squash and cleanup"
+    deps:
+      - check-gh-cli
+    cmds:
+      - |
+        # Get PR number for current branch
+        PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null)
+        if [ -z "$PR_NUMBER" ]; then
+          echo "No PR found for current branch"
+          exit 1
+        fi
+
+        # Check CI status
+        echo "Checking CI status..."
+        if ! gh pr checks "$PR_NUMBER" | grep -q "pass"; then
+          echo "Warning: Some checks may not have passed"
+          read -p "Continue with merge? (y/N) " -n 1 -r
+          echo
+          if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+          fi
+        fi
+
+        # Merge PR
+        echo "Merging PR #$PR_NUMBER with squash..."
+        gh pr merge "$PR_NUMBER" --squash --delete-branch
+
+        # Detect default branch (main or master)
+        DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+        if [ -z "$DEFAULT_BRANCH" ]; then
+          # Fallback to main if detection fails
+          DEFAULT_BRANCH="main"
+        fi
+
+        # Switch to default branch and update
+        echo "Switching to $DEFAULT_BRANCH and pulling latest..."
+        git checkout "$DEFAULT_BRANCH"
+        git pull
+
+        # Cleanup
+        echo "Cleaning up local branches..."
+        git fetch --prune
+
+        echo "Done! You're now on $DEFAULT_BRANCH with the latest changes."
+    silent: false
+
   pull-git-repos:
     desc: Pull updates for all git repositories in the current directory
     silent: true
