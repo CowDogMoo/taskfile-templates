@@ -149,6 +149,23 @@ failing checks.
 task merge-pull-requests
 ```
 
+### pr-merge
+
+Interactively merge the current branch's pull request with squash and cleanup.
+Checks CI status, prompts for confirmation if checks haven't passed, then merges
+and returns you to the default branch with cleanup.
+
+```bash
+task pr-merge
+```
+
+This task will:
+- Find the PR for your current branch
+- Check CI status and prompt if checks haven't passed
+- Squash merge the PR and delete the remote branch
+- Switch to the default branch (main/master) and pull latest changes
+- Clean up local branches with `git fetch --prune`
+
 ### pull-git-repos
 
 Pulls updates for all git repositories in the current directory.
@@ -223,6 +240,13 @@ task sync-submodules
    task ghcr-push-image IMAGE=my-app TAG=v1.0.0 ADDITIONAL_TAGS="latest,stable"
    ```
 
+1. **Merging your current PR:**
+
+   ```bash
+   # When you're ready to merge your current branch's PR
+   task pr-merge
+   ```
+
 ## 🔧 Extending Tasks
 
 You can extend these tasks in your own Taskfile by importing this template and
@@ -261,7 +285,9 @@ tasks:
   scopes for package access
 - All tasks have appropriate error handling and validation
 - The `merge-pull-requests` task will only merge PRs that have passing checks
-  and no conflicts
+  and no conflicts (automated bulk merging)
+- The `pr-merge` task is for interactive merging of your current branch's PR
+  with CI check validation and cleanup
 - Release tasks will use a changelog file if it exists, otherwise will generate
   notes automatically
 - The `sync-submodules` task is idempotent and can be run multiple times without
