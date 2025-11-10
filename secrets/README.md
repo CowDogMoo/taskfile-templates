@@ -78,6 +78,38 @@ local/ tasks
    task onepassword:create-vault VAULT_NAME=Staging
    ```
 
+1. create-secure-note
+   Create a secure note with custom fields in 1Password.
+   Required vars
+   • `ITEM_TITLE` – name of the item
+   • `VAULT_NAME` – vault slug / UUID
+   • `FIELDS` – comma-separated key=value pairs (e.g., `field1=value1,field2=value2`)
+
+   ```bash
+   # Create a secure note with multiple fields
+   task onepassword:create-secure-note \
+     ITEM_TITLE="API Keys" \
+     VAULT_NAME=Development \
+     FIELDS='api_key=abc123,api_secret=xyz789,environment=production'
+
+   # Store a password as a secure note
+   task onepassword:create-secure-note \
+     ITEM_TITLE="my-password" \
+     VAULT_NAME=my-vault \
+     FIELDS='password=secretvalue'
+   ```
+
+1. delete-item
+   Delete an item from 1Password (with confirmation prompt).
+   Required vars
+   • `ITEM_TITLE` – name of the item to delete
+   Optional vars
+   • `VAULT_NAME` – vault slug / UUID
+
+   ```bash
+   task onepassword:delete-item ITEM_TITLE="old-secret" VAULT_NAME=Development
+   ```
+
 ---
 
 ### local/
