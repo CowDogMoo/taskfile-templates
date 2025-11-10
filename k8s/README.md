@@ -138,6 +138,7 @@ task delete-error-pods
 ```
 
 This task finds and removes pods in the following error states:
+
 - CreateContainerError
 - ContainerCreating (stuck)
 - CrashLoopBackOff

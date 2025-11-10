@@ -160,6 +160,7 @@ task pr-merge
 ```
 
 This task will:
+
 - Find the PR for your current branch
 - Check CI status and prompt if checks haven't passed
 - Squash merge the PR and delete the remote branch

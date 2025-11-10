@@ -31,6 +31,7 @@ task onepassword:create-item \
 ### Account Management
 
 #### `setup-account`
+
 Set up and authenticate with your 1Password account.
 
 ```bash
@@ -40,6 +41,7 @@ task onepassword:setup-account OP_ACCOUNT=my-team.1password.com
 ### Vault Management
 
 #### `list-vaults`
+
 List all vaults in your 1Password account.
 
 ```bash
@@ -47,6 +49,7 @@ task onepassword:list-vaults
 ```
 
 #### `create-vault`
+
 Create a new vault.
 
 ```bash
@@ -56,9 +59,11 @@ task onepassword:create-vault VAULT_NAME=Development
 ### Item Management
 
 #### `create-item`
+
 Create any type of 1Password item using templates. Supports all 23 item categories with proper field types.
 
 **Parameters:**
+
 - `CATEGORY` (required) - Item category (Login, Secure Note, Password, etc.)
 - `TITLE` (required) - Item title/name
 - `VAULT_NAME` (required) - Vault to store the item in
@@ -67,10 +72,12 @@ Create any type of 1Password item using templates. Supports all 23 item categori
 - `TAGS` (optional) - Comma-separated tags
 
 **Field Format:**
+
 - `field=value` - Built-in field or custom text field
 - `field=value:type` - Custom field with specific type
 
 **Supported Field Types:**
+
 - `text` - Text string (default)
 - `password` - Concealed password field
 - `email` - Email address
@@ -86,6 +93,7 @@ Login, Secure Note, Password, Credit Card, Bank Account, Database, API Credentia
 **Examples:**
 
 Create a Login item:
+
 ```bash
 task onepassword:create-item \
   CATEGORY=Login \
@@ -96,6 +104,7 @@ task onepassword:create-item \
 ```
 
 Create a Secure Note with multiple field types:
+
 ```bash
 task onepassword:create-item \
   CATEGORY="Secure Note" \
@@ -105,6 +114,7 @@ task onepassword:create-item \
 ```
 
 Create a Secure Note with concealed/password fields (for API credentials):
+
 ```bash
 task onepassword:create-item \
   CATEGORY="Secure Note" \
@@ -114,6 +124,7 @@ task onepassword:create-item \
 ```
 
 Create a Password item (for API keys, tokens, etc.):
+
 ```bash
 task onepassword:create-item \
   CATEGORY=Password \
@@ -124,6 +135,7 @@ task onepassword:create-item \
 ```
 
 Create a Database item:
+
 ```bash
 task onepassword:create-item \
   CATEGORY=Database \
@@ -133,6 +145,7 @@ task onepassword:create-item \
 ```
 
 Create an API Credential:
+
 ```bash
 task onepassword:create-item \
   CATEGORY="API Credential" \
@@ -143,6 +156,7 @@ task onepassword:create-item \
 ```
 
 #### `delete-item`
+
 Delete an item from 1Password (requires confirmation).
 
 ```bash
@@ -154,6 +168,7 @@ task onepassword:delete-item \
 ### Secret Retrieval
 
 #### `list-secrets`
+
 List secrets in a vault, optionally filtered by category.
 
 ```bash
@@ -165,6 +180,7 @@ task onepassword:list-secrets VAULT_NAME=Personal CATEGORY=Login
 ```
 
 #### `get-secret`
+
 Retrieve a specific secret from 1Password.
 
 ```bash
@@ -181,7 +197,9 @@ task onepassword:get-secret SECRET_NAME="SSH Key" VAULT=Personal OUTPUT_FILE=~/.
 ## Field Types Reference
 
 ### Built-in Fields
+
 These are predefined in each item template:
+
 - **Login**: `username`, `password`, `notesPlain`
 - **Password**: `password`, `notesPlain`
 - **Secure Note**: `notesPlain`
@@ -190,7 +208,9 @@ These are predefined in each item template:
 Built-in fields don't require a type specification - just use `field=value`.
 
 ### Custom Fields
+
 Any field not in the template becomes a custom field. Specify the type with `:type` suffix:
+
 - `email=user@example.com:email`
 - `website=https://example.com:url`
 - `birthday=1990-01-15:date`
@@ -209,7 +229,9 @@ Without a type specification, custom fields default to `text` type.
 ## Troubleshooting
 
 ### "jq command not found"
+
 Install jq:
+
 ```bash
 # macOS
 brew install jq
@@ -219,19 +241,25 @@ sudo apt-get install jq
 ```
 
 ### "Not signed in to 1Password"
+
 Run the setup task:
+
 ```bash
 task onepassword:setup-account OP_ACCOUNT=your-account.1password.com
 ```
 
 ### "Failed to fetch template for category"
+
 List available categories:
+
 ```bash
 op item template list
 ```
 
 ### Field not appearing correctly
+
 Check the template structure:
+
 ```bash
 op item template get "Login"
 ```
