@@ -129,6 +129,20 @@ List all pods across all namespaces.
 task get-pods-all-ns
 ```
 
+#### delete-error-pods
+
+Delete all pods with CreateContainerError, ContainerCreating, or CrashLoopBackOff status across all namespaces.
+
+```bash
+task delete-error-pods
+```
+
+This task finds and removes pods in the following error states:
+- CreateContainerError
+- ContainerCreating (stuck)
+- CrashLoopBackOff
+- Terminating (stuck)
+
 ### GitOps - ArgoCD
 
 #### argo:install
