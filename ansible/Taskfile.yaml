@@ -2,80 +2,139 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+vars:
+  COLLECTION_PATH:
+    sh: echo "${COLLECTION_PATH:-$HOME/.ansible/collections}"
+  TARBALL:
+    sh: ls -t *.tar.gz 2>/dev/null | head -n1 || echo ""
+
 tasks:
+  build-collection:
+    desc: Build Ansible collection artifact with cleanup
+    vars:
+      BUILD_DIR: '{{.BUILD_DIR | default "."}}'
+    preconditions:
+      - sh: test -f galaxy.yml
+        msg: "galaxy.yml not found. Are you in a collection directory?"
+    cmds:
+      - rm -f *.tar.gz
+      - |
+        if [ -d "roles" ]; then
+          find roles -type d -name ".ansible" -exec rm -rf {} + 2>/dev/null || true
+        fi
+      - ansible-galaxy collection build --force --output-path {{.BUILD_DIR}}
+    sources:
+      - galaxy.yml
+      - roles/**/*
+      - plugins/**/*
+      - meta/**/*
+    generates:
+      - "*.tar.gz"
+
+  install-collection:
+    desc: Install Ansible collection from tarball
+    vars:
+      COLLECTION_PATH: '{{.COLLECTION_PATH | default .COLLECTION_PATH}}'
+      TARBALL: '{{.TARBALL | default .TARBALL}}'
+    preconditions:
+      - sh: '[ -n "{{.TARBALL}}" ]'
+        msg: "No tarball found. Run 'task ansible:build-collection' first or specify TARBALL=path"
+    cmds:
+      - ansible-galaxy collection install {{.TARBALL}} --force --collections-path {{.COLLECTION_PATH}}
+
+  build-install-collection:
+    desc: Build and install collection (recommended for development)
+    vars:
+      COLLECTION_PATH: '{{.COLLECTION_PATH | default .COLLECTION_PATH}}'
+      INSTALL_GLOBAL: '{{.INSTALL_GLOBAL | default "false"}}'
+      KEEP_TARBALL: '{{.KEEP_TARBALL | default "false"}}'
+    preconditions:
+      - sh: test -f galaxy.yml
+        msg: "galaxy.yml not found. Are you in a collection directory?"
+    cmds:
+      - rm -f *.tar.gz
+      - |
+        if [ -d "roles" ]; then
+          find roles -type d -name ".ansible" -exec rm -rf {} + 2>/dev/null || true
+        fi
+      - ansible-galaxy collection build --force
+      - defer: '[ "{{.KEEP_TARBALL}}" = "true" ] || rm -f *.tar.gz'
+      - |
+        TARBALL=$(ls -t *.tar.gz 2>/dev/null | head -n1)
+        ansible-galaxy collection install "$TARBALL" --force --collections-path {{.COLLECTION_PATH}}
+        if [ "{{.INSTALL_GLOBAL}}" = "true" ]; then
+          ansible-galaxy collection install "$TARBALL" --force --collections-path ~/.ansible/collections
+        fi
+
+  uninstall-collection:
+    desc: Uninstall Ansible collection
+    vars:
+      NAMESPACE: '{{.NAMESPACE}}'
+      COLLECTION: '{{.COLLECTION}}'
+      COLLECTION_PATH: '{{.COLLECTION_PATH | default .COLLECTION_PATH}}'
+    preconditions:
+      - sh: '[ -n "{{.NAMESPACE}}" ]'
+        msg: "NAMESPACE required. Usage: task ansible:uninstall-collection NAMESPACE=cowdogmoo COLLECTION=workstation"
+      - sh: '[ -n "{{.COLLECTION}}" ]'
+        msg: "COLLECTION required. Usage: task ansible:uninstall-collection NAMESPACE=cowdogmoo COLLECTION=workstation"
+      - sh: test -d {{.COLLECTION_PATH}}/ansible_collections/{{.NAMESPACE}}/{{.COLLECTION}}
+        msg: "Collection not found at {{.COLLECTION_PATH}}/ansible_collections/{{.NAMESPACE}}/{{.COLLECTION}}"
+    cmds:
+      - rm -rf {{.COLLECTION_PATH}}/ansible_collections/{{.NAMESPACE}}/{{.COLLECTION}}
+
   changelog-lint:
-    desc: "Lint the changelog"
+    desc: Lint the changelog
     cmds:
       - antsibull-changelog lint
+    silent: true
 
   changelog-release:
-    desc: "Generate the changelog release"
+    desc: Generate the changelog release
     deps: [update-galaxy-version]
     cmds:
       - antsibull-changelog release --version $NEXT_VERSION
 
   check-ansible:
-    desc: "Validate that Ansible is installed (for Ansible provisioners)"
-    cmds:
-      - |
-        if ! command -v ansible &> /dev/null; then
-          echo "'ansible' command not found. Please install Ansible: https://docs.ansible.com/ansible/latest/installation_guide/"
-          exit 1
-        fi
+    desc: Validate that Ansible is installed
+    preconditions:
+      - sh: command -v ansible
+        msg: "ansible not found. Install from https://docs.ansible.com/ansible/latest/installation_guide/"
     silent: true
 
   gen-changelog:
-    desc: "Generate the changelog for the next release"
+    desc: Generate the changelog for the next release
+    preconditions:
+      - sh: '[ -n "$NEXT_VERSION" ]'
+        msg: "NEXT_VERSION environment variable not set. Example: NEXT_VERSION=1.0.0"
     cmds:
-      - |
-        if [ -z "$NEXT_VERSION" ]; then
-          echo "'NEXT_VERSION' environment variable not set. Example: NEXT_VERSION=1.0.0"
-          exit 1
-        fi
-      - echo "Generating changelog for release $NEXT_VERSION"
       - task: changelog-lint
       - task: changelog-release
 
   lint-ansible:
-    desc: "Run Ansible Lint"
+    desc: Run Ansible Lint
     cmds:
-      - |
-        echo "Running ansible-lint."
-        ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
-    silent: true
+      - ansible-lint --force-color -c .hooks/linters/ansible-lint.yaml
 
   ping:
-    desc: "Ping: cross-OS, works on all/group/pattern/host specification, robust. Auto-detects Windows, Linux, and macOS hosts."
+    desc: Ping hosts (auto-detects Windows, Linux, macOS)
     vars:
       INVENTORY: '{{.INVENTORY}}'
-      HOSTS:     '{{.HOSTS | default "all"}}'
-      DEBUG:     '{{.DEBUG | default "false"}}'
-      OS_TYPE:   '{{.OS_TYPE | default "auto"}}'
+      HOSTS: '{{.HOSTS | default "all"}}'
+      DEBUG: '{{.DEBUG | default "false"}}'
+      OS_TYPE: '{{.OS_TYPE | default "auto"}}'
     cmds:
       - |
-        #— explicit OS_TYPE shortcuts
         if [ "{{.OS_TYPE}}" = "windows" ]; then
-          echo "Using win_ping module for {{.HOSTS}} (OS_TYPE=windows)"
           {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
             ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m win_ping
           exit $?
         elif [ "{{.OS_TYPE}}" = "linux" ]; then
-          echo "Using ping module for {{.HOSTS}} (OS_TYPE=linux)"
           {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
             ansible {{.HOSTS}} -i "{{.INVENTORY}}" -m ping
           exit $?
         fi
 
-        #— auto-detect: build a tiny playbook and run it
-        echo "Auto-detecting host types and pinging each…"
-
-        # try Linux-style mktemp first; if it errors, fall back to macOS -t form
-        if PLAYBOOK=$(mktemp /tmp/ping_playbook.XXXXXX.yml 2>/dev/null); then
-          :
-        else
-          PLAYBOOK=$(mktemp -t ping_playbook).yml
-        fi
-
+        PLAYBOOK=$(mktemp /tmp/ping_playbook.XXXXXX.yml 2>/dev/null || mktemp -t ping_playbook).yml
         cat > "$PLAYBOOK" << 'EOF'
         ---
         - hosts: {{.HOSTS}}
@@ -84,36 +143,29 @@ tasks:
             - name: Ping Windows hosts
               win_ping:
               when: ansible_facts.os_family == 'Windows'
-
             - name: Ping macOS hosts
               ping:
               when: ansible_facts['system'] == 'Darwin'
-
             - name: Ping Linux hosts
               ping:
               when: ansible_facts['system'] == 'Linux'
         EOF
-
-        echo "===== PING RESULTS ====="
         {{if eq .DEBUG "false"}}ANSIBLE_PYTHON_INTERPRETER=auto_silent {{end}}\
           ansible-playbook -i "{{.INVENTORY}}" "$PLAYBOOK"
         RET=$?
-
         rm -f "$PLAYBOOK"
         exit $RET
-    silent: false
 
   run-molecule-action:
-    desc: "Run GitHub Actions molecule workflow using act. Optionally specify ROLE or PLAYBOOK"
+    desc: Run GitHub Actions molecule workflow using act
     vars:
       ROLE: '{{.ROLE | default ""}}'
       PLAYBOOK: '{{.PLAYBOOK | default ""}}'
       IS_MAC_ARM: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}true{{else}}false{{end}}'
       ARCH_FLAG: '{{if eq .IS_MAC_ARM "true"}}--container-architecture linux/amd64{{end}}'
     cmds:
+      - docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
       - |
-        # Clean up any existing act containers
-        docker rm -f $(docker ps -q -f name=act-Molecule-Test) 2>/dev/null || true
         if [ -n "{{.ROLE}}" ]; then
           echo '{"inputs":{"ROLE":"{{.ROLE}}"}}' > /tmp/github-event.json
           act -W .github/workflows/molecule.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json
@@ -127,76 +179,42 @@ tasks:
         fi
 
   run-molecule-tests:
-    desc: "Run Molecule tests for one or more roles. Usage: task run-molecule-tests [ROLES='role1,role2'] or [ROLES='*'] for all"
+    desc: Run Molecule tests for roles (ROLES='role1,role2' or ROLES='*' for all)
     vars:
       ROLES: '{{.ROLES | default "*"}}'
     cmds:
+      - mkdir -p logs
       - |
-        mkdir -p logs
         export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
-
-        # Convert comma-separated list to array (portable way)
         ROLES_INPUT="{{.ROLES}}"
 
-        # If ROLES is "*" or empty, test all roles
         if [[ "$ROLES_INPUT" == "*" ]] || [[ -z "$ROLES_INPUT" ]]; then
-          echo "Running molecule tests for ALL roles..."
           for role in roles/*; do
             if [[ -d "$role" ]]; then
               role_name=$(basename "$role")
-              echo "========================================="
-              echo "Testing role: $role_name"
-              echo "========================================="
               (cd "$role" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
-              if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                echo "ERROR: Molecule tests failed for $role_name"
-                exit 1
-              fi
+              [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
             fi
           done
         else
-          # Test specific roles - handle comma-separated list
-          echo "Running molecule tests for specified roles: $ROLES_INPUT"
-
-          # Use a while loop with IFS to split the comma-separated values
           echo "$ROLES_INPUT" | tr ',' '\n' | while IFS= read -r role_name; do
-            # Trim whitespace
             role_name=$(echo "$role_name" | xargs)
             role_path="roles/${role_name}"
-
-            if [[ -d "$role_path" ]]; then
-              echo "========================================="
-              echo "Testing role: $role_name"
-              echo "========================================="
-              (cd "$role_path" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
-              if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                echo "ERROR: Molecule tests failed for $role_name"
-                exit 1
-              fi
-            else
+            if [[ ! -d "$role_path" ]]; then
               echo "ERROR: Role directory not found: $role_path"
               exit 1
             fi
+            (cd "$role_path" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
+            [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
           done
         fi
 
-        echo "========================================="
-        echo "All molecule tests completed successfully!"
-        echo "Logs available in: logs/"
-    silent: true
-
   update-galaxy-version:
-    desc: "Update version in galaxy.yml if it exists"
+    desc: Update version in galaxy.yml
+    preconditions:
+      - sh: '[ -n "$NEXT_VERSION" ]'
+        msg: "NEXT_VERSION environment variable not set"
+      - sh: test -f galaxy.yml
+        msg: "galaxy.yml not found"
     cmds:
-      - |
-        if [ -z "$NEXT_VERSION" ]; then
-          echo "'NEXT_VERSION' environment variable not set."
-          exit 1
-        fi
-        if [ -f "galaxy.yml" ]; then
-          yq e -i '.version = env(NEXT_VERSION)' galaxy.yml
-          echo "Updated galaxy.yml version to $NEXT_VERSION"
-        else
-          echo "No galaxy.yml found, skipping version update"
-        fi
-    silent: true
+      - yq e -i '.version = env(NEXT_VERSION)' galaxy.yml

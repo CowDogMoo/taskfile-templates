@@ -19,6 +19,35 @@ You must have the following installed for full functionality:
 
 ## 🎯 Available Tasks
 
+### Quick Reference
+
+**Collection Development:**
+
+- `build-collection` - Build collection artifact with cleanup
+- `install-collection` - Install collection from tarball
+- `build-install-collection` - **Recommended:** Build + install in one command
+- `uninstall-collection` - Remove installed collection
+
+**Testing & Quality:**
+
+- `run-molecule-tests` - Run Molecule tests for roles
+- `run-molecule-action` - Run Molecule workflow locally via act
+- `lint-ansible` - Run Ansible Lint
+- `ping` - Cross-platform Ansible ping
+
+**Changelog & Versioning:**
+
+- `gen-changelog` - Generate changelog for release
+- `changelog-lint` - Lint changelog
+- `changelog-release` - Generate changelog release
+- `update-galaxy-version` - Update version in galaxy.yml
+
+**Utilities:**
+
+- `check-ansible` - Validate Ansible installation
+
+---
+
 ### changelog-lint
 
 Lints the changelog using `antsibull-changelog` to ensure proper structure.
@@ -44,6 +73,124 @@ if not.
 
 ```bash
 task check-ansible
+```
+
+### build-collection
+
+Builds an Ansible collection artifact with automatic cleanup of problematic directories.
+
+**What it does:**
+
+- Removes old `*.tar.gz` build artifacts
+- Cleans up `.ansible/` directories from roles (prevents recursive nesting issues)
+- Builds the collection with `--force` flag
+- Uses incremental builds (only rebuilds when sources change)
+
+**Sources tracked:**
+
+- `galaxy.yml`
+- `roles/**/*`
+- `plugins/**/*`
+- `meta/**/*`
+
+**Optional Variables:**
+
+- `BUILD_DIR`: Output directory for tarball (default: `.`)
+
+```bash
+task ansible:build-collection
+
+# Custom output directory
+task ansible:build-collection BUILD_DIR=dist
+```
+
+**Note:** Requires `galaxy.yml` in current directory.
+
+### install-collection
+
+Installs an Ansible collection from a tarball using `ansible-galaxy`.
+
+**Optional Variables:**
+
+- `COLLECTION_PATH`: Installation path (default: `~/.ansible/collections`)
+- `TARBALL`: Path to tarball (auto-detects latest if not specified)
+
+```bash
+# Auto-detect latest tarball
+task ansible:install-collection
+
+# Specify tarball
+task ansible:install-collection TARBALL=cowdogmoo-workstation-1.0.0.tar.gz
+
+# Custom installation path
+task ansible:install-collection COLLECTION_PATH=./.ansible/collections
+```
+
+### build-install-collection
+
+**Recommended for local development.** Builds and installs an Ansible collection
+in one command with full cleanup. This is the primary task you should use to
+avoid recursive `.ansible/` directory issues during development.
+
+**What it does:**
+
+1. Cleans old build artifacts
+2. Removes `.ansible/` directories from roles
+3. Builds collection
+4. Installs to specified path (uses `--force` to overwrite)
+5. Optionally installs globally
+6. Cleans up tarball unless `KEEP_TARBALL=true`
+
+**Optional Variables:**
+
+- `COLLECTION_PATH`: Installation path (default: `~/.ansible/collections`)
+- `INSTALL_GLOBAL`: Set to `true` to also install to `~/.ansible/collections`
+- `KEEP_TARBALL`: Set to `true` to keep the tarball after installation
+
+```bash
+# Basic usage (installs to ~/.ansible/collections)
+task ansible:build-install-collection
+
+# Install to project-local collections
+task ansible:build-install-collection COLLECTION_PATH=./.ansible/collections
+
+# Install both locally and globally
+task ansible:build-install-collection COLLECTION_PATH=./.ansible/collections INSTALL_GLOBAL=true
+
+# Keep tarball after installation
+task ansible:build-install-collection KEEP_TARBALL=true
+```
+
+**Example:** This replaces manual commands like:
+
+```bash
+# Old way (manual)
+ansible-galaxy collection build --force && \
+ansible-galaxy collection install cowdogmoo-workstation-*.tar.gz --force
+
+# New way (automated with cleanup)
+task ansible:build-install-collection
+```
+
+### uninstall-collection
+
+Removes an installed Ansible collection. Since `ansible-galaxy` doesn't provide
+an uninstall command, this task handles manual removal.
+
+**Required Variables:**
+
+- `NAMESPACE`: Collection namespace (e.g., `cowdogmoo`)
+- `COLLECTION`: Collection name (e.g., `workstation`)
+
+**Optional Variables:**
+
+- `COLLECTION_PATH`: Path to collections (default: `~/.ansible/collections`)
+
+```bash
+task ansible:uninstall-collection NAMESPACE=cowdogmoo COLLECTION=workstation
+
+# From custom path
+task ansible:uninstall-collection NAMESPACE=cowdogmoo COLLECTION=workstation COLLECTION_PATH=./.ansible/collections
 ```
 
 ### gen-changelog
@@ -254,11 +401,35 @@ If `galaxy.yml` is not present, the step is skipped.
 
 ## 🔍 Important Notes
 
-- All tasks provide error handling
+- All tasks use preconditions for validation with clear error messages
+- Collection tasks automatically clean `.ansible/` directories to prevent recursive nesting
+- `build-collection` uses incremental builds (only rebuilds when sources change)
 - All Molecule output stored in `logs/molecule_tests.log`
 - `run-molecule-action` supports macOS ARM64 containers automatically
 - Docker containers are cleaned up between test runs
 - **All changelog-related tasks require the `NEXT_VERSION` variable**
+- **Use `build-install-collection` for local development** to avoid manual cleanup
+
+## 🔄 Typical Workflow
+
+When working on an Ansible collection that uses these tasks:
+
+```bash
+# Make changes to your collection
+vim roles/myapp/tasks/main.yml
+
+# Build and install to test locally
+task ansible:build-install-collection COLLECTION_PATH=./.ansible/collections
+
+# Run tests
+task ansible:run-molecule-tests
+
+# Lint
+task ansible:lint-ansible
+
+# When ready to release
+task ansible:gen-changelog NEXT_VERSION=1.2.3
+```
 
 ## 🔧 Importing Tasks
 
@@ -269,6 +440,13 @@ version: "3"
 includes:
   ansible: "./path/to/ansible/Taskfile.yaml"
 tasks:
+  dev:
+    desc: Build and install collection for local development
+    cmds:
+      - task: ansible:build-install-collection
+        vars:
+          COLLECTION_PATH: ./.ansible/collections
+
   test-and-release:
     cmds:
       - task: ansible:run-molecule-tests
@@ -276,36 +454,6 @@ tasks:
         vars: { NEXT_VERSION: 1.0.0 }
       - task: ansible:lint-ansible
 ```
-
-## 📝 Directory Structure
-
-```bash
-.
-├── ansible.cfg
-├── roles/
-│   ├── asdf/
-│   ├── user_setup/
-│   └── zsh_setup/
-├── playbooks/
-│   └── workstation/
-├── logs/
-│   └── molecule_tests.log
-├── .hooks/
-│   └── linters/
-│       └── ansible-lint.yaml
-├── galaxy.yml
-├── README.md
-└── Taskfile.yaml
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-1. Create a new branch for your changes
-1. Ensure tests pass: `task run-molecule-tests`
-1. Lint changes: `task lint-ansible`
-1. Update changelog: `task gen-changelog NEXT_VERSION=x.y.z`
-1. Submit as a PR
 
 ## 📜 License
 
