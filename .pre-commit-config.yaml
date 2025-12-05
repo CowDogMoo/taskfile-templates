@@ -43,6 +43,6 @@ repos:
     hooks:
       - id: prettier
         name: Run prettier
-        entry: .hooks/prettier-hook.sh
+        entry: .hooks/prettier.sh
         language: script
         types: [json, yaml]

@@ -1,37 +1,27 @@
 #!/bin/bash
-set -exo pipefail
+set -eo pipefail
 
-# Check if npm is installed
-if ! [ -x "$(command -v npm)" ]; then
-    echo 'Error: npm is not installed.' >&2
-    exit 1
-else
-    # Check if Prettier is installed
-    if ! [ -x "$(command -v prettier)" ]; then
-        echo 'Error: Prettier is not installed.' >&2
-        echo 'Installing Prettier...'
-        npm install -g prettier
-    fi
-fi
-
-# Check if Prettier is installed
-if ! [ -x "$(command -v prettier)" ]; then
-    echo 'Error: Prettier is not installed.' >&2
+# Check if prettier is installed
+if ! command -v prettier &> /dev/null; then
+    echo 'Error: prettier is not installed.' >&2
+    echo 'Please install it with: npm install -g prettier' >&2
     exit 1
 fi
 
-# Run Prettier on staged .json, .yaml, and .yml files
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=d | grep -E '\.(json|ya?ml)$' || true)
+
+# Exit early if no files to format
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# Run Prettier on staged files
 echo "Running Prettier on staged files..."
+echo "$STAGED_FILES" | xargs prettier --write
 
-# List all staged files, filter for the desired extensions, and run Prettier
-git diff --cached --name-only --diff-filter=d \
-                                              | grep -E '\.(json|ya?ml)$' \
-                            | xargs -I {} prettier --write {}
-
-# Add the files back to staging area as Prettier may have modified them
-git diff --name-only --diff-filter=d \
-                                     | grep -E '\.(json|ya?ml)$' \
-                            | xargs git add
+# Add formatted files back to staging area
+echo "$STAGED_FILES" | xargs git add
 
 echo "Prettier formatting completed."
 
