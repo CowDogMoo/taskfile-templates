@@ -704,6 +704,131 @@ tasks:
         fi
         exit 0
 
+  delete-instance:
+    desc: "Delete (terminate) an EC2 instance by instance ID"
+    deps:
+      - check-aws
+      - check-jq
+    vars:
+      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      INSTANCE_ID: '{{.INSTANCE_ID}}'
+      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      WAIT_FOR_TERMINATION: '{{.WAIT_FOR_TERMINATION | default "true"}}'
+    cmds:
+      - |
+        # Check required parameters
+        if [ -z "{{.INSTANCE_ID}}" ]; then
+            echo "Error: INSTANCE_ID is required"
+            echo "Usage: task aws:delete-instance INSTANCE_ID=i-1234567890abcdef0"
+            exit 1
+        fi
+
+        echo "Retrieving instance information for: {{.INSTANCE_ID}}"
+
+        # Check if instance exists and get its current state
+        INSTANCE_INFO=$(aws ec2 describe-instances \
+          --instance-ids "{{.INSTANCE_ID}}" \
+          --region {{.REGION}} \
+          --output json 2>&1)
+
+        if [ $? -ne 0 ]; then
+            if echo "$INSTANCE_INFO" | grep -q "InvalidInstanceID.NotFound"; then
+                echo "Error: Instance {{.INSTANCE_ID}} not found in region {{.REGION}}"
+            else
+                echo "Error: Failed to describe instance {{.INSTANCE_ID}}"
+                echo "$INSTANCE_INFO"
+            fi
+            exit 1
+        fi
+
+        # Extract instance details
+        INSTANCE_STATE=$(echo "$INSTANCE_INFO" | jq -r '.Reservations[0].Instances[0].State.Name')
+        INSTANCE_NAME=$(echo "$INSTANCE_INFO" | jq -r '.Reservations[0].Instances[0].Tags[]? | select(.Key=="Name") | .Value // "N/A"')
+        INSTANCE_TYPE=$(echo "$INSTANCE_INFO" | jq -r '.Reservations[0].Instances[0].InstanceType')
+        PUBLIC_IP=$(echo "$INSTANCE_INFO" | jq -r '.Reservations[0].Instances[0].PublicIpAddress // "N/A"')
+        PRIVATE_IP=$(echo "$INSTANCE_INFO" | jq -r '.Reservations[0].Instances[0].PrivateIpAddress // "N/A"')
+
+        echo "----------------------------------------"
+        echo "Instance Details:"
+        echo "  Instance ID: {{.INSTANCE_ID}}"
+        echo "  Name: $INSTANCE_NAME"
+        echo "  Type: $INSTANCE_TYPE"
+        echo "  State: $INSTANCE_STATE"
+        echo "  Public IP: $PUBLIC_IP"
+        echo "  Private IP: $PRIVATE_IP"
+        echo "  Region: {{.REGION}}"
+        echo "----------------------------------------"
+
+        # Check if already terminated or terminating
+        if [ "$INSTANCE_STATE" = "terminated" ]; then
+            echo "Instance {{.INSTANCE_ID}} is already terminated"
+            exit 0
+        elif [ "$INSTANCE_STATE" = "terminating" ]; then
+            echo "Instance {{.INSTANCE_ID}} is already terminating"
+            if [ "{{.WAIT_FOR_TERMINATION}}" = "true" ]; then
+                echo "Waiting for termination to complete..."
+            else
+                exit 0
+            fi
+        else
+            if [ "{{.DRY_RUN}}" = "true" ]; then
+                echo "DRY RUN MODE - No changes will be made"
+                echo "Would terminate instance: {{.INSTANCE_ID}}"
+                exit 0
+            fi
+
+            echo "Terminating instance: {{.INSTANCE_ID}}"
+            TERMINATE_OUTPUT=$(aws ec2 terminate-instances \
+              --instance-ids "{{.INSTANCE_ID}}" \
+              --region {{.REGION}} \
+              --output json 2>&1)
+
+            if [ $? -ne 0 ]; then
+                echo "Error: Failed to terminate instance {{.INSTANCE_ID}}"
+                echo "$TERMINATE_OUTPUT"
+                exit 1
+            fi
+
+            CURRENT_STATE=$(echo "$TERMINATE_OUTPUT" | jq -r '.TerminatingInstances[0].CurrentState.Name')
+            echo "Instance state changed to: $CURRENT_STATE"
+        fi
+
+        # Wait for termination if requested
+        if [ "{{.WAIT_FOR_TERMINATION}}" = "true" ] && [ "{{.DRY_RUN}}" != "true" ]; then
+            echo "Waiting for instance to terminate..."
+            TIMEOUT=300  # 5 minutes timeout
+            START_TIME=$(date +%s)
+
+            while true; do
+                CURRENT_TIME=$(date +%s)
+                ELAPSED=$((CURRENT_TIME - START_TIME))
+
+                if [ $ELAPSED -gt $TIMEOUT ]; then
+                    echo "Timeout reached while waiting for instance {{.INSTANCE_ID}} to terminate"
+                    echo "Instance may still be terminating in the background"
+                    exit 1
+                fi
+
+                # Check current state
+                CURRENT_STATE=$(aws ec2 describe-instances \
+                  --instance-ids "{{.INSTANCE_ID}}" \
+                  --region {{.REGION}} \
+                  --query "Reservations[0].Instances[0].State.Name" \
+                  --output text 2>/dev/null)
+
+                if [ "$CURRENT_STATE" = "terminated" ]; then
+                    echo "Instance {{.INSTANCE_ID}} has been successfully terminated"
+                    break
+                else
+                    echo "Current state: $CURRENT_STATE (waiting... ${ELAPSED}s elapsed)"
+                    sleep 10
+                fi
+            done
+        fi
+
+        echo "----------------------------------------"
+        echo "Operation completed successfully"
+
   list-running-instances:
     desc: "List all running EC2 instances with details"
     deps:

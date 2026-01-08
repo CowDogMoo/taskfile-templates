@@ -186,6 +186,42 @@ task cleanup-kms REGION=us-west-2 DAYS_TO_DELETION=10 DRY_RUN=true
 
 ---
 
+### 🗑️ delete-instance
+
+Delete (terminate) an EC2 instance by its instance ID.
+
+**Example:**
+
+```bash
+# Dry run to preview instance deletion without actually terminating
+task delete-instance INSTANCE_ID=i-1234567890abcdef0 DRY_RUN=true
+
+# Terminate an instance and wait for completion
+task delete-instance INSTANCE_ID=i-1234567890abcdef0 REGION=us-east-1
+
+# Terminate without waiting for completion
+task delete-instance INSTANCE_ID=i-1234567890abcdef0 WAIT_FOR_TERMINATION=false
+```
+
+**Parameters:**
+
+| Parameter              | Required | Default                             | Description                                          |
+| ---------------------- | -------- | ----------------------------------- | ---------------------------------------------------- |
+| `DRY_RUN`              | ❌ No    | `false`                             | Set to `true` to preview deletion without terminating|
+| `INSTANCE_ID`          | ✅ Yes   | None — must be specified            | EC2 instance ID to terminate                         |
+| `REGION`               | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region where the instance is located             |
+| `WAIT_FOR_TERMINATION` | ❌ No    | `true`                              | Wait for instance to fully terminate before exiting  |
+
+**Process:**
+
+- Retrieves and displays instance information before deletion
+- Checks current instance state (running, stopped, terminated, etc.)
+- Skips deletion if instance is already terminated or terminating
+- Terminates the instance and optionally waits for completion (5 minute timeout)
+- Provides detailed progress logging and error handling
+
+---
+
 ### 🖥️ list-running-instances
 
 List detailed info about all currently running EC2 instances.
@@ -229,6 +265,12 @@ task list-running-instances REGION=us-east-1
 
   ```bash
   task cleanup-kms REGION=us-east-1 DAYS_TO_DELETION=14
+  ```
+
+- **Terminate an EC2 instance with preview:**
+
+  ```bash
+  task delete-instance INSTANCE_ID=i-0123456789abcdef DRY_RUN=true
   ```
 
 ---
