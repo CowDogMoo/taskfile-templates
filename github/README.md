@@ -140,15 +140,6 @@ Optional variables:
 - `REGISTRY`: Container registry URL
 - `NAMESPACE`: Registry namespace
 
-### merge-pull-requests
-
-Squash and merges all eligible pull requests, closing those with conflicts or
-failing checks.
-
-```bash
-task merge-pull-requests
-```
-
 ### pr-merge
 
 Interactively merge the current branch's pull request with squash and cleanup.
@@ -174,6 +165,50 @@ Pulls updates for all git repositories in the current directory.
 ```bash
 task pull-git-repos
 ```
+
+### recent-branches
+
+Shows branches you worked on most recently in a project.
+
+```bash
+# Show recent branches in current directory
+task recent-branches
+
+# Show recent branches in a specific project
+task recent-branches PROJECT_PATH=/path/to/project
+
+# Show more branches (default is 10)
+task recent-branches LIMIT=20
+```
+
+Optional variables:
+
+- `PROJECT_PATH`: Path to the git repository (default: current directory)
+- `LIMIT`: Number of branches to show (default: 10)
+
+### recent-projects
+
+Shows the most recently worked on git projects by scanning for git repositories.
+
+```bash
+# Show 5 most recent projects in home directory
+task recent-projects
+
+# Search in a specific path
+task recent-projects SEARCH_PATH=/path/to/projects
+
+# Show more projects
+task recent-projects LIMIT=10
+
+# Search deeper in directory tree
+task recent-projects MAX_DEPTH=5
+```
+
+Optional variables:
+
+- `SEARCH_PATH`: Directory to search for git repositories (default: `$HOME`)
+- `LIMIT`: Number of projects to show (default: 5)
+- `MAX_DEPTH`: Maximum depth to search for git repositories (default: 3)
 
 ### remove-git-submodules
 
@@ -248,6 +283,19 @@ task sync-submodules
    task pr-merge
    ```
 
+1. **Finding recent work:**
+
+   ```bash
+   # See which projects you worked on recently
+   task recent-projects
+
+   # See recent branches in current project
+   task recent-branches
+
+   # See recent branches in a specific project
+   task recent-branches PROJECT_PATH=/path/to/project LIMIT=15
+   ```
+
 ## 🔧 Extending Tasks
 
 You can extend these tasks in your own Taskfile by importing this template and
@@ -285,8 +333,6 @@ tasks:
 - The `ghcr-setup` task configures GitHub authentication with the necessary
   scopes for package access
 - All tasks have appropriate error handling and validation
-- The `merge-pull-requests` task will only merge PRs that have passing checks
-  and no conflicts (automated bulk merging)
 - The `pr-merge` task is for interactive merging of your current branch's PR
   with CI check validation and cleanup
 - Release tasks will use a changelog file if it exists, otherwise will generate
@@ -294,3 +340,6 @@ tasks:
 - The `sync-submodules` task is idempotent and can be run multiple times without
   issues
 - The `pull-git-repos` task skips repositories with uncommitted changes
+- The `recent-branches` task shows branches sorted by last commit date
+- The `recent-projects` task scans for git repositories and sorts them by last
+  commit timestamp

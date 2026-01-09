@@ -271,64 +271,6 @@ tasks:
         echo "Image pushed successfully to {{.REMOTE_IMAGE}}"
     silent: true
 
-  merge-pull-requests:
-    desc: "Squash and merge all eligible pull requests, closing conflicting and failing ones"
-    deps:
-      - check-gh-cli
-    cmds:
-      - |
-        # Fetch all open pull requests with required information
-        echo "Fetching open pull requests..."
-        raw_prs=$(gh pr list --state open --json number,statusCheckRollup,mergeable,headRefName)
-        echo "Raw PR data: $raw_prs"
-
-        # Process PRs with successful checks and handle conflicts
-        echo "$raw_prs" | jq -r '.[] | select(.statusCheckRollup != null) |
-          {
-            number: .number,
-            headRefName: .headRefName,
-            mergeable: .mergeable,
-            totalChecks: (.statusCheckRollup | length),
-            passingChecks: (.statusCheckRollup | map(select(.status == "COMPLETED" and .conclusion == "SUCCESS")) | length),
-            checksPass: (.statusCheckRollup | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
-          } |
-          @json' | while read -r pr_info; do
-
-          pr_number=$(echo "$pr_info" | jq -r '.number')
-          branch_name=$(echo "$pr_info" | jq -r '.headRefName')
-          mergeable=$(echo "$pr_info" | jq -r '.mergeable')
-          total_checks=$(echo "$pr_info" | jq -r '.totalChecks')
-          passing_checks=$(echo "$pr_info" | jq -r '.passingChecks')
-          checks_pass=$(echo "$pr_info" | jq -r '.checksPass')
-
-          echo "Processing PR #$pr_number (Branch: $branch_name)"
-          echo "Mergeable status: $mergeable"
-          echo "Checks status: $passing_checks of $total_checks passing"
-
-          # Check if PR is mergeable AND all checks pass
-          if [ "$checks_pass" = "true" ] && [ "$mergeable" = "MERGEABLE" ]; then
-            echo "Attempting to squash and merge PR #$pr_number..."
-            if gh pr merge "$pr_number" --squash --delete-branch --auto; then
-              echo "Successfully merged PR #$pr_number"
-            else
-              echo "Failed to merge PR #$pr_number despite being marked as mergeable"
-            fi
-          else
-            # Either has conflicts or failing checks, so close it
-            echo "PR #$pr_number has failing checks ($passing_checks of $total_checks passing) or conflicts. Closing PR..."
-            if gh pr close "$pr_number" --delete-branch; then
-              echo "Successfully closed PR #$pr_number and deleted branch $branch_name"
-            else
-              echo "Failed to close PR #$pr_number"
-            fi
-          fi
-        done
-
-        echo "Completed processing all pull requests"
-    requires:
-      vars: []
-    silent: true
-
   pr-merge:
     desc: "Merge the current branch's PR with squash and cleanup"
     deps:
@@ -457,6 +399,80 @@ tasks:
         echo "Submodule removal complete"
     requires:
       vars: ['TARGET_DIR', 'REGEXP']
+    silent: true
+
+  recent-branches:
+    desc: Show branches you worked on most recently in a project
+    vars:
+      PROJECT_PATH: '{{.PROJECT_PATH | default "."}}'
+      LIMIT: '{{.LIMIT | default "10"}}'
+    cmds:
+      - |
+        # Change to project directory
+        cd "{{.PROJECT_PATH}}"
+
+        # Check if it's a git repository
+        if ! git rev-parse --git-dir > /dev/null 2>&1; then
+          echo "Error: {{.PROJECT_PATH}} is not a git repository"
+          exit 1
+        fi
+
+        echo "Recent branches in $(pwd):"
+        echo ""
+
+        # Show recent branches sorted by last commit date
+        # Format: branch name, last commit date, last commit message
+        git for-each-ref --sort=-committerdate refs/heads/ \
+          --format='%(refname:short)|%(committerdate:relative)|%(contents:subject)' \
+          --count={{.LIMIT}} | while IFS='|' read -r branch date message; do
+          # Highlight current branch
+          current=$(git branch --show-current)
+          if [ "$branch" = "$current" ]; then
+            printf "* \033[32m%-30s\033[0m %-20s %s\n" "$branch" "$date" "$message"
+          else
+            printf "  %-30s %-20s %s\n" "$branch" "$date" "$message"
+          fi
+        done
+    silent: true
+
+  recent-projects:
+    desc: Show the 5 most recently worked on git projects
+    vars:
+      SEARCH_PATH: '{{.SEARCH_PATH | default "$HOME"}}'
+      LIMIT: '{{.LIMIT | default "5"}}'
+      MAX_DEPTH: '{{.MAX_DEPTH | default "3"}}'
+    cmds:
+      - |
+        echo "Searching for recent projects in {{.SEARCH_PATH}}..."
+        echo ""
+
+        # Find all git repositories and get their last commit date
+        find "{{.SEARCH_PATH}}" -maxdepth {{.MAX_DEPTH}} -name ".git" -type d 2>/dev/null | while read -r git_dir; do
+          project_dir=$(dirname "$git_dir")
+
+          # Get last commit timestamp and branch
+          cd "$project_dir"
+          last_commit=$(git log -1 --format=%ct 2>/dev/null)
+          branch=$(git branch --show-current 2>/dev/null || echo "detached")
+
+          if [ -n "$last_commit" ]; then
+            echo "$last_commit|$project_dir|$branch"
+          fi
+        done | sort -rn | head -n {{.LIMIT}} | while IFS='|' read -r timestamp path branch; do
+          # Convert timestamp to human-readable date
+          if date -r "$timestamp" "+%Y-%m-%d %H:%M:%S" >/dev/null 2>&1; then
+            # macOS/BSD date
+            date_str=$(date -r "$timestamp" "+%Y-%m-%d %H:%M:%S")
+          else
+            # GNU date
+            date_str=$(date -d "@$timestamp" "+%Y-%m-%d %H:%M:%S")
+          fi
+
+          printf "%-25s %-20s %s\n" "$date_str" "[$branch]" "$path"
+        done
+
+        echo ""
+        echo "Tip: Use PROJECT_PATH=/path/to/project with recent-branches to see branches in a specific project"
     silent: true
 
   sync-submodules:
