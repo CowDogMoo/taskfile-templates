@@ -325,6 +325,19 @@ Runs `molecule test` for one or more roles in the `roles/` directory. Supports
 testing individual roles, multiple roles, or all roles at once. Each role's
 output is logged to a separate file in the `logs/` directory.
 
+**Smart Scenario Detection:**
+
+- Only runs tests for roles that have molecule scenarios configured (`molecule/default/molecule.yml`)
+- When testing all roles (`*`), automatically skips roles without scenarios
+- When testing specific roles, shows a clear message for roles without scenarios instead of failing
+
+**Result Tracking:**
+
+- Runs all tests (doesn't fail fast on first failure)
+- Tracks passed, failed, and skipped roles throughout execution
+- Provides a summary report at the end showing PASS/FAIL/SKIP counts
+- Only exits with error code after all tests complete (if any failed)
+
 **Optional Variables:**
 
 - `ROLES`: Comma-separated list of role names, or `*` for all roles (default: `*`)
@@ -332,7 +345,7 @@ output is logged to a separate file in the `logs/` directory.
 **Usage Examples:**
 
 ```bash
-# Run tests for all roles (default)
+# Run tests for all roles with molecule scenarios (default)
 task run-molecule-tests
 
 # Run tests for all roles explicitly
@@ -349,7 +362,8 @@ task run-molecule-tests ROLES="logging,asdf,user_setup"
 
 - Individual log files per role: `logs/molecule_tests_<role_name>.log`
 - Clear visual separation between role tests in console output
-- Fails fast if any role test fails
+- Graceful skip messages for roles without molecule scenarios
+- Summary report showing passed, failed, and skipped roles
 
 **Example Output:**
 
@@ -404,7 +418,8 @@ If `galaxy.yml` is not present, the step is skipped.
 - All tasks use preconditions for validation with clear error messages
 - Collection tasks automatically clean `.ansible/` directories to prevent recursive nesting
 - `build-collection` uses incremental builds (only rebuilds when sources change)
-- All Molecule output stored in `logs/molecule_tests.log`
+- All Molecule output stored in `logs/molecule_tests_<role_name>.log`
+- `run-molecule-tests` automatically detects and skips roles without molecule scenarios
 - `run-molecule-action` supports macOS ARM64 containers automatically
 - Docker containers are cleaned up between test runs
 - **All changelog-related tasks require the `NEXT_VERSION` variable**

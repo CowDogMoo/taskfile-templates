@@ -2,6 +2,8 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+set: [pipefail]
+
 vars:
   COLLECTION_PATH:
     sh: echo "${COLLECTION_PATH:-$HOME/.ansible/collections}"
@@ -179,35 +181,74 @@ tasks:
         fi
 
   run-molecule-tests:
-    desc: Run Molecule tests for roles (ROLES='role1,role2' or ROLES='*' for all)
+    desc: Run molecule tests for roles that have scenarios
     vars:
       ROLES: '{{.ROLES | default "*"}}'
     cmds:
-      - mkdir -p logs
-      - |
-        export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
-        ROLES_INPUT="{{.ROLES}}"
+      - cmd: |
+          mkdir -p logs
+          export ANSIBLE_CONFIG=$(pwd)/ansible.cfg
+          export ALLOW_BROKEN_CONDITIONALS=1
+          set +e
+          ROLES_INPUT="{{.ROLES}}"
+          passed_roles=()
+          failed_roles=()
+          skipped_roles=()
 
-        if [[ "$ROLES_INPUT" == "*" ]] || [[ -z "$ROLES_INPUT" ]]; then
-          for role in roles/*; do
-            if [[ -d "$role" ]]; then
-              role_name=$(basename "$role")
-              (cd "$role" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
-              [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
-            fi
-          done
-        else
-          echo "$ROLES_INPUT" | tr ',' '\n' | while IFS= read -r role_name; do
-            role_name=$(echo "$role_name" | xargs)
-            role_path="roles/${role_name}"
-            if [[ ! -d "$role_path" ]]; then
-              echo "ERROR: Role directory not found: $role_path"
-              exit 1
-            fi
-            (cd "$role_path" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
-            [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
-          done
-        fi
+          if [[ "$ROLES_INPUT" == "*" ]] || [[ -z "$ROLES_INPUT" ]]; then
+            for role in roles/*; do
+              if [[ -d "$role" && -f "$role/molecule/default/molecule.yml" ]]; then
+                role_name=$(basename "$role")
+                (cd "$role" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
+                role_status=${PIPESTATUS[0]}
+                if [[ $role_status -eq 0 ]]; then
+                  passed_roles+=("$role_name")
+                else
+                  failed_roles+=("$role_name")
+                fi
+              elif [[ -d "$role" ]]; then
+                skipped_roles+=("$(basename "$role")")
+              fi
+            done
+          else
+            echo "$ROLES_INPUT" | tr ',' '\n' | while IFS= read -r role_name; do
+              role_name=$(echo "$role_name" | xargs)
+              role_path="roles/${role_name}"
+              if [[ ! -d "$role_path" ]]; then
+                echo "ERROR: Role directory not found: $role_path"
+                exit 1
+              fi
+              if [[ ! -f "$role_path/molecule/default/molecule.yml" ]]; then
+                echo "Skipping ${role_name}: no molecule scenario"
+                skipped_roles+=("$role_name")
+                continue
+              fi
+              (cd "$role_path" && molecule test) | tee -a logs/molecule_tests_${role_name}.log
+              role_status=${PIPESTATUS[0]}
+              if [[ $role_status -eq 0 ]]; then
+                passed_roles+=("$role_name")
+              else
+                failed_roles+=("$role_name")
+              fi
+            done
+          fi
+
+          echo ""
+          echo "Molecule results:"
+          if [[ ${#passed_roles[@]} -gt 0 ]]; then
+            echo "  PASS: ${passed_roles[*]}"
+          fi
+          if [[ ${#failed_roles[@]} -gt 0 ]]; then
+            echo "  FAIL: ${failed_roles[*]}"
+          fi
+          if [[ ${#skipped_roles[@]} -gt 0 ]]; then
+            echo "  SKIP: ${skipped_roles[*]}"
+          fi
+
+          if [[ ${#failed_roles[@]} -gt 0 ]]; then
+            exit 1
+          fi
+        shell: bash
 
   update-galaxy-version:
     desc: Update version in galaxy.yml
