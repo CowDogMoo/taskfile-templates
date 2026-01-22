@@ -835,10 +835,16 @@ tasks:
       - check-aws
     vars:
       REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      FILTER: '{{.FILTER | default ""}}'
     cmds:
       - |
+        QUERY="Reservations[].Instances[].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
+        if [ -n "{{.FILTER}}" ]; then
+          QUERY="Reservations[].Instances[] | [?contains(to_string(InstanceId), '{{.FILTER}}') || contains(to_string(PrivateIpAddress), '{{.FILTER}}') || contains(to_string(PublicIpAddress), '{{.FILTER}}') || contains(to_string(Tags[?Key=='Name']|[0].Value), '{{.FILTER}}')].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
+        fi
+
         aws ec2 describe-instances \
-          --query "Reservations[*].Instances[*].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}" \
+          --query "$QUERY" \
           --filters Name=instance-state-name,Values=running \
           --region {{.REGION}} \
           --output json

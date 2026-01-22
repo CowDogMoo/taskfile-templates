@@ -237,12 +237,20 @@ task list-running-instances REGION=us-east-1
 | Parameter | Required | Default                             | Description                               |
 | --------- | -------- | ----------------------------------- | ----------------------------------------- |
 | `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region to target for EC2 descriptions |
+| `FILTER`  | ❌ No    | (none)                              | Filter by substring match (ID/IP/Name)    |
 
 **Output includes:**
 
 - Instance IDs
 - VPC IDs & Subnet IDs
 - Public IP & Private IP addresses
+
+**Filter example:**
+
+```bash
+task list-running-instances FILTER=crucible
+```
+
 - Instance Names based on "Name" tags
 
 ---
