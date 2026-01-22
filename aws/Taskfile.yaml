@@ -2,9 +2,24 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+output: prefixed
+
+set: [errexit, pipefail]
+
+vars:
+  DEFAULT_REGION:
+    sh: echo ${AWS_DEFAULT_REGION:-us-east-1}
+  DEFAULT_DRY_RUN: "false"
+  DEFAULT_DAYS_TO_DELETION: "7"
+  DEFAULT_WAIT_FOR_TERMINATION: "true"
+
+env:
+  AWS_PAGER: ""
+
 tasks:
   check-aws:
     desc: "Validate that AWS CLI is installed"
+    platforms: [linux, darwin]
     cmds:
       - |
         if ! command -v aws &> /dev/null; then
@@ -15,6 +30,7 @@ tasks:
 
   check-jq:
     desc: "Validate that jq is installed"
+    platforms: [linux, darwin]
     cmds:
       - |
         if ! command -v jq &> /dev/null; then
@@ -25,13 +41,14 @@ tasks:
 
   cleanup-bucket:
     desc: "Delete S3 buckets matching a specified keyword"
+    platforms: [linux, darwin]
     deps:
       - check-aws
       - check-jq
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       KEYWORD: '{{.KEYWORD}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
     cmds:
       - |
         # Check required parameters
@@ -94,13 +111,15 @@ tasks:
 
   cleanup-dynamodb:
     desc: "Delete DynamoDB tables matching a specified keyword"
+    platforms: [linux, darwin]
     deps:
       - check-aws
       - check-jq
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       KEYWORD: '{{.KEYWORD}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
+      DELETION_TIMEOUT: 300
     cmds:
       - |
         # Check required parameters
@@ -167,13 +186,12 @@ tasks:
           echo "Waiting for table deletion to complete..."
 
           # Wait for table to be deleted (with timeout to prevent endless waiting)
-          TIMEOUT=300  # 5 minutes timeout
           START_TIME=$(date +%s)
           while true; do
             CURRENT_TIME=$(date +%s)
             ELAPSED=$((CURRENT_TIME - START_TIME))
 
-            if [ $ELAPSED -gt $TIMEOUT ]; then
+            if [ $ELAPSED -gt {{.DELETION_TIMEOUT}} ]; then
               echo "Timeout reached while waiting for table $TABLE to be deleted"
               break
             fi
@@ -203,12 +221,13 @@ tasks:
 
   cleanup-efs:
     desc: "Delete EFS file system and its mount targets"
+    platforms: [linux, darwin]
     deps:
       - check-aws
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       FILE_SYSTEM_ID: '{{.FILE_SYSTEM_ID}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
     cmds:
       - |
         if [ -z "{{.FILE_SYSTEM_ID}}" ]; then
@@ -271,13 +290,18 @@ tasks:
 
   cleanup-iam:
     desc: "Clean up IAM resources matching a specified keyword"
+    platforms: [linux, darwin]
     deps:
       - check-aws
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       KEYWORD: '{{.KEYWORD}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
     cmds:
+      - TEMP_ROLES=$(mktemp)
+      - defer: rm -f $TEMP_ROLES
+      - TEMP_POLICIES=$(mktemp)
+      - defer: rm -f $TEMP_POLICIES
       - |
         # Check required parameters
         if [ -z "{{.KEYWORD}}" ]; then
@@ -398,10 +422,6 @@ tasks:
         echo "Searching for IAM resources with '{{.KEYWORD}}' in the name..."
         set +e  # Don't exit on error
 
-        # Use a temporary file to store results
-        TEMP_ROLES=$(mktemp)
-        TEMP_POLICIES=$(mktemp)
-
         # Get roles that match the keyword
         aws iam list-roles --query "Roles[].[RoleName, Arn]" --output text 2>/dev/null | grep -i "{{.KEYWORD}}" > "$TEMP_ROLES" || true
 
@@ -415,7 +435,6 @@ tasks:
 
         if [ $TOTAL_COUNT -eq 0 ]; then
           echo "No IAM resources found matching keyword '{{.KEYWORD}}'"
-          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
           exit 0
         fi
 
@@ -428,7 +447,6 @@ tasks:
           echo "POLICIES:"
           cat "$TEMP_POLICIES"
           echo "To perform actual deletion, run with DRY_RUN=false"
-          rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
           exit 0
         fi
 
@@ -438,21 +456,19 @@ tasks:
         cat "$TEMP_ROLES" | clean_up_iam_resources
         cat "$TEMP_POLICIES" | clean_up_iam_resources
 
-        # Clean up temporary files
-        rm -f "$TEMP_ROLES" "$TEMP_POLICIES"
-
         echo "IAM cleanup completed. Processed $TOTAL_COUNT resources."
 
   cleanup-kms:
     desc: "Find and schedule deletion of unused KMS keys (those without aliases) or keys matching a specified keyword"
+    platforms: [linux, darwin]
     deps:
       - check-aws
       - check-jq
     vars:
-      DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default "7"}}'
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DAYS_TO_DELETION: '{{.DAYS_TO_DELETION | default .DEFAULT_DAYS_TO_DELETION}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       KEYWORD: '{{.KEYWORD | default ""}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
     cmds:
       - |
         # Function to handle errors
@@ -706,20 +722,22 @@ tasks:
 
   delete-instance:
     desc: "Delete (terminate) an EC2 instance by instance ID"
+    platforms: [linux, darwin]
     deps:
       - check-aws
       - check-jq
     vars:
-      DRY_RUN: '{{.DRY_RUN | default "false"}}'
+      DRY_RUN: '{{.DRY_RUN | default .DEFAULT_DRY_RUN}}'
       INSTANCE_ID: '{{.INSTANCE_ID}}'
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
-      WAIT_FOR_TERMINATION: '{{.WAIT_FOR_TERMINATION | default "true"}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
+      WAIT_FOR_TERMINATION: '{{.WAIT_FOR_TERMINATION | default .DEFAULT_WAIT_FOR_TERMINATION}}'
+      TERMINATION_TIMEOUT: 300
     cmds:
       - |
         # Check required parameters
         if [ -z "{{.INSTANCE_ID}}" ]; then
             echo "Error: INSTANCE_ID is required"
-            echo "Usage: task aws:delete-instance INSTANCE_ID=i-1234567890abcdef0"
+            echo "Usage: task delete-instance INSTANCE_ID=i-1234567890abcdef0"
             exit 1
         fi
 
@@ -796,14 +814,13 @@ tasks:
         # Wait for termination if requested
         if [ "{{.WAIT_FOR_TERMINATION}}" = "true" ] && [ "{{.DRY_RUN}}" != "true" ]; then
             echo "Waiting for instance to terminate..."
-            TIMEOUT=300  # 5 minutes timeout
             START_TIME=$(date +%s)
 
             while true; do
                 CURRENT_TIME=$(date +%s)
                 ELAPSED=$((CURRENT_TIME - START_TIME))
 
-                if [ $ELAPSED -gt $TIMEOUT ]; then
+                if [ $ELAPSED -gt {{.TERMINATION_TIMEOUT}} ]; then
                     echo "Timeout reached while waiting for instance {{.INSTANCE_ID}} to terminate"
                     echo "Instance may still be terminating in the background"
                     exit 1
@@ -831,16 +848,20 @@ tasks:
 
   list-running-instances:
     desc: "List all running EC2 instances with details"
+    platforms: [linux, darwin]
     deps:
       - check-aws
     vars:
-      REGION: '{{.REGION | default (env "AWS_DEFAULT_REGION" | default "us-east-2")}}'
+      REGION: '{{.REGION | default .DEFAULT_REGION}}'
       FILTER: '{{.FILTER | default ""}}'
+      BASE_QUERY: "Reservations[].Instances[].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
+      FILTER_CONDITIONS: "contains(to_string(InstanceId), '{{.FILTER}}') || contains(to_string(PrivateIpAddress), '{{.FILTER}}') || contains(to_string(PublicIpAddress), '{{.FILTER}}') || contains(to_string(Tags[?Key=='Name']|[0].Value), '{{.FILTER}}')"
     cmds:
       - |
-        QUERY="Reservations[].Instances[].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
         if [ -n "{{.FILTER}}" ]; then
-          QUERY="Reservations[].Instances[] | [?contains(to_string(InstanceId), '{{.FILTER}}') || contains(to_string(PrivateIpAddress), '{{.FILTER}}') || contains(to_string(PublicIpAddress), '{{.FILTER}}') || contains(to_string(Tags[?Key=='Name']|[0].Value), '{{.FILTER}}')].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
+          QUERY="Reservations[].Instances[] | [?{{.FILTER_CONDITIONS}}].{InstanceId:InstanceId, VPC:VpcId, Subnet:SubnetId, PublicIP:PublicIpAddress, PrivateIP:PrivateIpAddress, Name:Tags[?Key=='Name']|[0].Value}"
+        else
+          QUERY="{{.BASE_QUERY}}"
         fi
 
         aws ec2 describe-instances \

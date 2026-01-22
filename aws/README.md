@@ -61,7 +61,7 @@ task cleanup-bucket KEYWORD=test-bucket REGION=us-east-1
 | --------- | -------- | ----------------------------------- | ---------------------------------- |
 | `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview deletions |
 | `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword to match bucket names      |
-| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region for bucket deletion     |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region for bucket deletion     |
 
 **Process:**
 
@@ -91,7 +91,7 @@ task cleanup-dynamodb KEYWORD=test-table REGION=us-east-1
 | --------- | -------- | ----------------------------------- | ---------------------------------------------------------- |
 | `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview deletions without performing them |
 | `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword to identify DynamoDB tables to delete              |
-| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region where the tables are located                    |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region where the tables are located                    |
 
 **Process:**
 
@@ -119,7 +119,7 @@ task cleanup-efs FILE_SYSTEM_ID=fs-0123456789abcdef REGION=us-west-2 DRY_RUN=tru
 | ---------------- | -------- | ----------------------------------- | ---------------------------------- |
 | `DRY_RUN`        | ❌ No    | `false`                             | Set to `true` to preview deletions |
 | `FILE_SYSTEM_ID` | ✅ Yes   | None — must be specified            | EFS File System ID to delete       |
-| `REGION`         | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region for EFS deletion        |
+| `REGION`         | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region for EFS deletion        |
 
 **Process:**
 
@@ -145,7 +145,7 @@ task cleanup-iam KEYWORD=temp-policy DRY_RUN=true
 | --------- | -------- | ----------------------------------- | ----------------------------------------------- |
 | `DRY_RUN` | ❌ No    | `false`                             | Set to `true` to preview action before deletion |
 | `KEYWORD` | ✅ Yes   | None — must be specified            | Keyword matching IAM resource names             |
-| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region to perform IAM operations            |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region to perform IAM operations            |
 
 **Process:**
 
@@ -171,12 +171,12 @@ task cleanup-kms REGION=us-west-2 DAYS_TO_DELETION=10 DRY_RUN=true
 
 **Parameters:**
 
-| Parameter          | Required | Default                                       | Description                                  |
-| ------------------ | -------- | --------------------------------------------- | -------------------------------------------- |
-| `DAYS_TO_DELETION` | ❌ No    | `7`                                           | Waiting period before permanent key deletion |
-| `DRY_RUN`          | ❌ No    | `false`                                       | Set to `true` for a preview                  |
-| `KEYWORD`          | ❌ No    | None (Keys without Name tags chosen if blank) | Keyword to find specific KMS keys            |
-| `REGION`           | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2`           | AWS region for KMS operations                |
+| Parameter          | Required | Default                                     | Description                                  |
+| ------------------ | -------- | ------------------------------------------- | -------------------------------------------- |
+| `DAYS_TO_DELETION` | ❌ No    | `7`                                         | Waiting period before permanent key deletion |
+| `DRY_RUN`          | ❌ No    | `false`                                     | Set to `true` for a preview                  |
+| `KEYWORD`          | ❌ No    | None (Keys without aliases chosen if blank) | Keyword to find specific KMS keys            |
+| `REGION`           | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1`         | AWS region for KMS operations                |
 
 **Process:**
 
@@ -205,12 +205,12 @@ task delete-instance INSTANCE_ID=i-1234567890abcdef0 WAIT_FOR_TERMINATION=false
 
 **Parameters:**
 
-| Parameter              | Required | Default                             | Description                                          |
-| ---------------------- | -------- | ----------------------------------- | ---------------------------------------------------- |
-| `DRY_RUN`              | ❌ No    | `false`                             | Set to `true` to preview deletion without terminating|
-| `INSTANCE_ID`          | ✅ Yes   | None — must be specified            | EC2 instance ID to terminate                         |
-| `REGION`               | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region where the instance is located             |
-| `WAIT_FOR_TERMINATION` | ❌ No    | `true`                              | Wait for instance to fully terminate before exiting  |
+| Parameter              | Required | Default                             | Description                                           |
+| ---------------------- | -------- | ----------------------------------- | ----------------------------------------------------- |
+| `DRY_RUN`              | ❌ No    | `false`                             | Set to `true` to preview deletion without terminating |
+| `INSTANCE_ID`          | ✅ Yes   | None — must be specified            | EC2 instance ID to terminate                          |
+| `REGION`               | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region where the instance is located              |
+| `WAIT_FOR_TERMINATION` | ❌ No    | `true`                              | Wait for instance to fully terminate before exiting   |
 
 **Process:**
 
@@ -236,7 +236,7 @@ task list-running-instances REGION=us-east-1
 
 | Parameter | Required | Default                             | Description                               |
 | --------- | -------- | ----------------------------------- | ----------------------------------------- |
-| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-2` | AWS region to target for EC2 descriptions |
+| `REGION`  | ❌ No    | `AWS_DEFAULT_REGION` or `us-east-1` | AWS region to target for EC2 descriptions |
 | `FILTER`  | ❌ No    | (none)                              | Filter by substring match (ID/IP/Name)    |
 
 **Output includes:**
