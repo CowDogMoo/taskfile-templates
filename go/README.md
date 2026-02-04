@@ -142,6 +142,25 @@ task test-coverage
 
 Opens `coverage.html` with a visual representation of code coverage.
 
+#### coverage
+
+Show a per-package coverage table and overall percentage in the terminal.
+
+```bash
+task coverage
+```
+
+Example output:
+
+```text
+| Package              | Coverage   |
+|----------------------|------------|
+| myapp                |     82.3%  |
+| utils                |     91.0%  |
+
+Overall: 85.4%
+```
+
 #### lint
 
 Run golangci-lint to check code quality.

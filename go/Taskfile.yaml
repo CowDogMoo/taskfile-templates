@@ -88,6 +88,16 @@ tasks:
       - go tool cover -html=coverage.out -o coverage.html
       - echo "Coverage report generated at coverage.html"
 
+  coverage:
+    desc: Show test coverage table and overall percentage
+    cmds:
+      - |
+        go test -coverprofile=/tmp/{{.BINARY_NAME}}-cover.out ./... 2>&1 | \
+          awk 'BEGIN {printf "| %-20s | %-10s |\n|----------------------|------------|\n", "Package", "Coverage"}
+               /^ok/ {split($2,pkg,"/"); for(i=1;i<=NF;i++) if($i ~ /%/) pct=$i; printf "| %-20s | %10s |\n", pkg[length(pkg)], pct}'
+        echo ""
+        go tool cover -func=/tmp/{{.BINARY_NAME}}-cover.out | tail -1 | awk '{printf "Overall: %s\n", $NF}'
+
   lint:
     desc: Run linter (requires golangci-lint)
     cmds:
