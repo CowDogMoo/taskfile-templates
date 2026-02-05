@@ -9,7 +9,10 @@ tasks:
     vars:
       ARGOCD_NAMESPACE: '{{ .ARGOCD_NAMESPACE | default "argocd" }}'
       ARGOCD_VERSION: '{{ .ARGOCD_VERSION | default "5.51.6" }}'
-      ARGOCD_PASSWORD: '{{ .ARGOCD_PASSWORD | default "admin" }}'
+      ARGOCD_PASSWORD: '{{ .ARGOCD_PASSWORD | default "" }}'
+    preconditions:
+      - sh: '[ -n "{{ .ARGOCD_PASSWORD }}" ]'
+        msg: "ARGOCD_PASSWORD is required (set ARGOCD_PASSWORD=... when running this task)"
     cmds:
       - |
         # Check for Python bcrypt module
