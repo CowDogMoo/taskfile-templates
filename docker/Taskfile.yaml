@@ -148,3 +148,40 @@ tasks:
         docker manifest push ${MANIFEST_IMAGE}
 
         echo "Multi-architecture image successfully pushed to ${MANIFEST_IMAGE}"
+
+  setup-buildx:
+    desc: "Create and configure Docker buildx builder for multiarch builds"
+    deps: [check-docker]
+    vars:
+      BUILDER_NAME: '{{ .BUILDER_NAME | default "multiarch-builder" }}'
+    cmds:
+      - |
+        if docker buildx inspect {{.BUILDER_NAME}} >/dev/null 2>&1; then
+          echo "Builder '{{.BUILDER_NAME}}' already exists"
+          docker buildx use {{.BUILDER_NAME}}
+        else
+          echo "Creating buildx builder '{{.BUILDER_NAME}}'"
+          docker buildx create --name {{.BUILDER_NAME}} --driver docker-container --bootstrap --use
+        fi
+        docker buildx inspect --bootstrap
+    status:
+      - docker buildx inspect {{.BUILDER_NAME}} >/dev/null 2>&1
+
+  login:
+    desc: "Login to container registry"
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+    cmds:
+      - |
+        if [ -z "$GITHUB_TOKEN" ]; then
+          echo "ERROR: GITHUB_TOKEN not set"
+          exit 1
+        fi
+        echo "$GITHUB_TOKEN" | docker login {{.REGISTRY}} -u ${GITHUB_USER:-$USER} --password-stdin
+
+  inspect-manifest:
+    desc: "Inspect a multi-arch image manifest"
+    requires:
+      vars: ['IMAGE']
+    cmds:
+      - docker buildx imagetools inspect {{.IMAGE}}

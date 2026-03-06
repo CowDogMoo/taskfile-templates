@@ -178,6 +178,80 @@ This task will:
 1. Tag and push both ARM64 and AMD64 images
 1. Create and push a multi-architecture manifest
 
+### setup-buildx
+
+Creates and configures a Docker buildx builder for multi-architecture builds.
+
+**Optional Variables:**
+
+- `BUILDER_NAME`: Name of the buildx builder (default: `multiarch-builder`)
+
+```bash
+# Create default builder
+task setup-buildx
+
+# Create builder with custom name
+task setup-buildx BUILDER_NAME=my-builder
+```
+
+This task is idempotent - it will reuse an existing builder if one with the same
+name already exists.
+
+### login
+
+Authenticates to a container registry using a GitHub token.
+
+**Required Environment Variables:**
+
+- `GITHUB_TOKEN`: GitHub token for authentication
+
+**Optional Variables:**
+
+- `REGISTRY`: Docker registry URL (default: `ghcr.io`)
+
+**Optional Environment Variables:**
+
+- `GITHUB_USER`: GitHub username (default: current user)
+
+```bash
+# Login to GitHub Container Registry
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+task login
+
+# Login to a different registry
+task login REGISTRY=docker.io
+```
+
+### inspect-manifest
+
+Inspects a multi-architecture image manifest to verify platforms and digests.
+
+**Required Variables:**
+
+- `IMAGE`: Full image reference to inspect
+
+```bash
+# Inspect a multi-arch image
+task inspect-manifest IMAGE=ghcr.io/myorg/myapp:latest
+```
+
+**Example output:**
+
+```bash
+Name:      ghcr.io/myorg/myapp:latest
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:abc123...
+
+Manifests:
+  Name:      ghcr.io/myorg/myapp:latest@sha256:def456...
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/amd64
+
+  Name:      ghcr.io/myorg/myapp:latest@sha256:ghi789...
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/arm64
+```
+
 ## 🔧 Extending Tasks
 
 Import these tasks in your own Taskfile:
