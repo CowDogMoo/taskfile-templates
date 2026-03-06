@@ -46,13 +46,13 @@ jobs:
 
       - name: Test renovate:check-npx
         run: |
-          task -t Taskfile.yaml check-npx
+          task -y -t Taskfile.yaml check-npx
           echo "renovate:check-npx passed"
 
       - name: Test renovate:lint
         run: |
           cd ..
-          task -t renovate/Taskfile.yaml lint CONFIG_FILE=.github/renovate.json5
+          task -y -t renovate/Taskfile.yaml lint CONFIG_FILE=.github/renovate.json5
           echo "renovate:lint passed"
 
       - name: Summary

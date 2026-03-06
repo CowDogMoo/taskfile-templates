@@ -61,37 +61,39 @@ jobs:
           mkdir -p testcollection/plugins
           mkdir -p testcollection/meta
 
-          cat > testcollection/galaxy.yml << 'EOF'
-          namespace: testns
-          name: testcollection
-          version: 1.0.0
-          readme: README.md
-          authors:
-            - Test Author
-          description: Test collection for CI
-          license_file: LICENSE
-          tags:
-            - test
-          dependencies: {}
-          repository: https://github.com/test/test
-          EOF
-          sed -i 's/^          //' testcollection/galaxy.yml
+          # Create galaxy.yml with proper YAML formatting
+          printf '%s\n' \
+            'namespace: testns' \
+            'name: testcollection' \
+            'version: 1.0.0' \
+            'readme: README.md' \
+            'authors:' \
+            '  - Test Author' \
+            'description: Test collection for CI' \
+            'license_file: LICENSE' \
+            'tags:' \
+            '  - test' \
+            'dependencies: {}' \
+            'repository: https://github.com/test/test' \
+            > testcollection/galaxy.yml
 
-          cat > testcollection/README.md << 'EOF'
-          # Test Collection
-          This is a test collection for CI testing.
-          EOF
-          sed -i 's/^          //' testcollection/README.md
+          echo '# Test Collection' > testcollection/README.md
+          echo 'This is a test collection for CI testing.' >> testcollection/README.md
 
-          echo "MIT License" > testcollection/LICENSE
+          echo 'MIT License' > testcollection/LICENSE
 
-          cat > testcollection/roles/testrole/tasks/main.yml << 'EOF'
-          ---
-          - name: Test task
-            ansible.builtin.debug:
-              msg: "Hello from test role"
-          EOF
-          sed -i 's/^          //' testcollection/roles/testrole/tasks/main.yml
+          printf '%s\n' \
+            '---' \
+            '- name: Test task' \
+            '  ansible.builtin.debug:' \
+            '    msg: "Hello from test role"' \
+            > testcollection/roles/testrole/tasks/main.yml
+
+          # Verify files were created
+          echo "Created files:"
+          ls -la testcollection/
+          echo "galaxy.yml content:"
+          cat testcollection/galaxy.yml
 
       - name: Test ansible:build-collection
         run: |
