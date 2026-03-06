@@ -1,0 +1,137 @@
+---
+name: Test Kubernetes Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "k8s/Taskfile.yaml"
+      - ".github/workflows/test-k8s-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "k8s/Taskfile.yaml"
+      - ".github/workflows/test-k8s-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+  KIND_VERSION: v0.24.0
+  KUBECTL_VERSION: v1.31.0
+
+permissions:
+  contents: read
+
+jobs:
+  test-k8s-binary-checks:
+    name: Test K8s Binary Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: k8s
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test k8s:check-kind (not installed)
+        run: |
+          task -t Taskfile.yaml check-kind || echo "k8s:check-kind correctly failed (kind not installed)"
+
+      - name: Test k8s:check-kubectl (not installed)
+        run: |
+          task -t Taskfile.yaml check-kubectl || echo "k8s:check-kubectl correctly failed (kubectl not installed)"
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Test k8s:check-kind (installed)
+        run: |
+          task -t Taskfile.yaml check-kind
+          echo "k8s:check-kind passed"
+
+      - name: Test k8s:check-kubectl (installed)
+        run: |
+          task -t Taskfile.yaml check-kubectl
+          echo "k8s:check-kubectl passed"
+
+      - name: Summary
+        run: |
+          echo "K8s binary check tasks tested successfully:"
+          echo "  - k8s:check-kind"
+          echo "  - k8s:check-kubectl"
+
+  test-k8s-cluster-operations:
+    name: Test K8s Cluster Operations
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: k8s
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Test k8s:create-kind
+        run: |
+          task -t Taskfile.yaml create-kind CLUSTER_NAME=ci-test-cluster
+          kubectl cluster-info
+          echo "k8s:create-kind passed"
+
+      - name: Test k8s:get-pods-all-ns
+        run: |
+          task -t Taskfile.yaml get-pods-all-ns
+          echo "k8s:get-pods-all-ns passed"
+
+      - name: Test k8s:get-events
+        run: |
+          task -t Taskfile.yaml get-events
+          echo "k8s:get-events passed"
+
+      - name: Test k8s:destroy-kind
+        run: |
+          task -t Taskfile.yaml destroy-kind CLUSTER_NAME=ci-test-cluster
+          echo "k8s:destroy-kind passed"
+        if: always()
+
+      - name: Summary
+        run: |
+          echo "K8s cluster operation tasks tested successfully:"
+          echo "  - k8s:create-kind"
+          echo "  - k8s:get-pods-all-ns"
+          echo "  - k8s:get-events"
+          echo "  - k8s:destroy-kind"

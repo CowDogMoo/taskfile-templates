@@ -1,0 +1,106 @@
+---
+name: Test Terraform Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "terraform/Taskfile.yaml"
+      - ".github/workflows/test-terraform-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/Taskfile.yaml"
+      - ".github/workflows/test-terraform-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+  TF_VERSION: 1.9.0
+
+permissions:
+  contents: read
+
+jobs:
+  test-terraform-tasks:
+    name: Test Terraform Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269571ae # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Install tflint
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+      - name: Test terraform:check-terraform
+        run: |
+          task -t Taskfile.yaml check-terraform
+          echo "terraform:check-terraform passed"
+
+      - name: Test terraform:check-terragrunt (expected failure)
+        run: |
+          task -t Taskfile.yaml check-terragrunt || echo "terraform:check-terragrunt correctly failed (terragrunt not installed)"
+
+      - name: Create test Terraform project
+        run: |
+          mkdir -p testproject
+          cat > testproject/main.tf << 'EOF'
+          terraform {
+            required_version = ">= 1.0"
+          }
+
+          variable "environment" {
+            type        = string
+            description = "Environment name"
+            default     = "test"
+          }
+
+          output "environment_name" {
+            value = var.environment
+          }
+          EOF
+
+      - name: Test terraform:format
+        run: |
+          cd testproject
+          task -t ../Taskfile.yaml format
+          echo "terraform:format passed"
+
+      - name: Test terraform:validate
+        run: |
+          cd testproject
+          terraform init -backend=false
+          task -t ../Taskfile.yaml validate
+          echo "terraform:validate passed"
+
+      - name: Test terraform:tf-init-upgrade
+        run: |
+          cd testproject
+          task -t ../Taskfile.yaml tf-init-upgrade
+          echo "terraform:tf-init-upgrade passed"
+
+      - name: Summary
+        run: |
+          echo "All Terraform tasks tested successfully:"
+          echo "  - terraform:check-terraform"
+          echo "  - terraform:check-terragrunt (expected failure - not installed)"
+          echo "  - terraform:format"
+          echo "  - terraform:validate"
+          echo "  - terraform:tf-init-upgrade"

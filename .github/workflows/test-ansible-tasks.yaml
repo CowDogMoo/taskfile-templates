@@ -1,0 +1,132 @@
+---
+name: Test Ansible Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "ansible/Taskfile.yaml"
+      - ".github/workflows/test-ansible-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ansible/Taskfile.yaml"
+      - ".github/workflows/test-ansible-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+  PYTHON_VERSION: 3.13.3
+
+permissions:
+  contents: read
+
+jobs:
+  test-ansible-tasks:
+    name: Test Ansible Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ansible and tools
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install ansible ansible-lint
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test ansible:check-ansible
+        run: |
+          task -t Taskfile.yaml check-ansible
+          echo "ansible:check-ansible passed"
+
+      - name: Create test Ansible collection
+        run: |
+          mkdir -p testcollection/roles/testrole/tasks
+          mkdir -p testcollection/plugins
+          mkdir -p testcollection/meta
+
+          cat > testcollection/galaxy.yml << 'EOF'
+          namespace: testns
+          name: testcollection
+          version: 1.0.0
+          readme: README.md
+          authors:
+            - Test Author
+          description: Test collection for CI
+          license_file: LICENSE
+          tags:
+            - test
+          dependencies: {}
+          repository: https://github.com/test/test
+          EOF
+
+          cat > testcollection/README.md << 'EOF'
+          # Test Collection
+          This is a test collection for CI testing.
+          EOF
+
+          cat > testcollection/LICENSE << 'EOF'
+          MIT License
+          EOF
+
+          cat > testcollection/roles/testrole/tasks/main.yml << 'EOF'
+          ---
+          - name: Test task
+            ansible.builtin.debug:
+              msg: "Hello from test role"
+          EOF
+
+      - name: Test ansible:build-collection
+        run: |
+          cd testcollection
+          task -t ../Taskfile.yaml build-collection
+          ls -la *.tar.gz
+          echo "ansible:build-collection passed"
+
+      - name: Test ansible:install-collection
+        run: |
+          cd testcollection
+          TARBALL=$(ls -t *.tar.gz | head -n1)
+          task -t ../Taskfile.yaml install-collection TARBALL="$TARBALL" COLLECTION_PATH=/tmp/ansible_collections
+          test -d /tmp/ansible_collections/ansible_collections/testns/testcollection
+          echo "ansible:install-collection passed"
+
+      - name: Test ansible:uninstall-collection
+        run: |
+          cd testcollection
+          task -t ../Taskfile.yaml uninstall-collection NAMESPACE=testns COLLECTION=testcollection COLLECTION_PATH=/tmp/ansible_collections
+          test ! -d /tmp/ansible_collections/ansible_collections/testns/testcollection
+          echo "ansible:uninstall-collection passed"
+
+      - name: Test ansible:build-install-collection
+        run: |
+          cd testcollection
+          rm -f *.tar.gz
+          task -t ../Taskfile.yaml build-install-collection COLLECTION_PATH=/tmp/ansible_collections2
+          test -d /tmp/ansible_collections2/ansible_collections/testns/testcollection
+          echo "ansible:build-install-collection passed"
+
+      - name: Summary
+        run: |
+          echo "All Ansible tasks tested successfully:"
+          echo "  - ansible:check-ansible"
+          echo "  - ansible:build-collection"
+          echo "  - ansible:install-collection"
+          echo "  - ansible:uninstall-collection"
+          echo "  - ansible:build-install-collection"
