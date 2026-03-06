@@ -51,8 +51,7 @@ jobs:
 
       - name: Test renovate:lint
         run: |
-          cd ..
-          task -y -t renovate/Taskfile.yaml lint CONFIG_FILE=.github/renovate.json5
+          task -y --dir .. -t Taskfile.yaml lint CONFIG_FILE=$GITHUB_WORKSPACE/.github/renovate.json5
           echo "renovate:lint passed"
 
       - name: Summary
