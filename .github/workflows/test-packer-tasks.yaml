@@ -1,0 +1,129 @@
+---
+name: Test Packer Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "packer/Taskfile.yaml"
+      - ".github/workflows/test-packer-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "packer/Taskfile.yaml"
+      - ".github/workflows/test-packer-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+  PACKER_VERSION: 1.11.0
+
+permissions:
+  contents: read
+
+jobs:
+  test-packer-tasks:
+    name: Test Packer Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packer
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@1aa358be5cf73883762b302a3a03abd66e75b232 # v3.1.0
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test packer:check-packer
+        run: |
+          task -t Taskfile.yaml check-packer
+          echo "packer:check-packer passed"
+
+      - name: Create test Packer template
+        run: |
+          mkdir -p testproject
+          cat > testproject/test.pkr.hcl << 'EOF'
+          packer {
+            required_version = ">= 1.7.0"
+          }
+
+          variable "image_name" {
+            type    = string
+            default = "test-image"
+          }
+
+          source "null" "test" {
+            communicator = "none"
+          }
+
+          build {
+            sources = ["source.null.test"]
+          }
+          EOF
+
+      - name: Test packer:format
+        run: |
+          cd testproject
+          task -t ../Taskfile.yaml format
+          echo "packer:format passed"
+
+      - name: Test packer:packer-fmt (check mode)
+        run: |
+          cd testproject
+          task -t ../Taskfile.yaml packer-fmt CHECK=true TEMPLATE_DIR=.
+          echo "packer:packer-fmt passed"
+
+      - name: Test packer:validate
+        run: |
+          cd testproject
+          task -t ../Taskfile.yaml validate
+          echo "packer:validate passed"
+
+      - name: Test packer:packer-validate
+        run: |
+          task -t Taskfile.yaml packer-validate TEMPLATE_DIR=testproject TEMPLATE=test.pkr.hcl
+          echo "packer:packer-validate passed"
+
+      - name: Test packer:packer-inspect
+        run: |
+          task -t Taskfile.yaml packer-inspect TEMPLATE_DIR=testproject TEMPLATE=test.pkr.hcl
+          echo "packer:packer-inspect passed"
+
+      - name: Test packer:cleanup-packer-manifest (no manifest)
+        run: |
+          task -t Taskfile.yaml cleanup-packer-manifest MANIFEST_PATH=./nonexistent.json
+          echo "packer:cleanup-packer-manifest passed (no manifest case)"
+
+      - name: Test packer:cleanup-packer-manifest (with manifest)
+        run: |
+          echo '{"builds":[]}' > testproject/manifest.json
+          task -t Taskfile.yaml cleanup-packer-manifest MANIFEST_PATH=testproject/manifest.json
+          test ! -f testproject/manifest.json && echo "packer:cleanup-packer-manifest passed (manifest removed)"
+
+      - name: Test packer:packer-plugin-list
+        run: |
+          task -t Taskfile.yaml packer-plugin-list
+          echo "packer:packer-plugin-list passed"
+
+      - name: Summary
+        run: |
+          echo "All Packer tasks tested successfully:"
+          echo "  - packer:check-packer"
+          echo "  - packer:format"
+          echo "  - packer:packer-fmt"
+          echo "  - packer:validate"
+          echo "  - packer:packer-validate"
+          echo "  - packer:packer-inspect"
+          echo "  - packer:cleanup-packer-manifest"
+          echo "  - packer:packer-plugin-list"

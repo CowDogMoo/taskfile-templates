@@ -1,0 +1,64 @@
+---
+name: Test Renovate Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "renovate/Taskfile.yaml"
+      - ".github/workflows/test-renovate-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "renovate/Taskfile.yaml"
+      - ".github/workflows/test-renovate-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+
+permissions:
+  contents: read
+
+jobs:
+  test-renovate-tasks:
+    name: Test Renovate Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: renovate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test renovate:check-npx
+        run: |
+          task -y -t Taskfile.yaml check-npx
+          echo "renovate:check-npx passed"
+
+      - name: Test renovate:lint
+        run: |
+          task -y --dir .. -t Taskfile.yaml lint CONFIG_FILE=$GITHUB_WORKSPACE/.github/renovate.json5
+          echo "renovate:lint passed"
+
+      - name: Summary
+        run: |
+          echo "All Renovate tasks tested successfully:"
+          echo "  - renovate:check-npx"
+          echo "  - renovate:lint"
+          echo ""
+          echo "Tasks not tested (require credentials):"
+          echo "  - renovate:test-local (requires GitHub token)"

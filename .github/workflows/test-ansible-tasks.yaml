@@ -1,0 +1,132 @@
+---
+name: Test Ansible Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "ansible/Taskfile.yaml"
+      - ".github/workflows/test-ansible-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ansible/Taskfile.yaml"
+      - ".github/workflows/test-ansible-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+  PYTHON_VERSION: 3.13.3
+
+permissions:
+  contents: read
+
+jobs:
+  test-ansible-tasks:
+    name: Test Ansible Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ansible and tools
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install ansible ansible-lint
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test ansible:check-ansible
+        run: |
+          task -t Taskfile.yaml check-ansible
+          echo "ansible:check-ansible passed"
+
+      - name: Create test Ansible collection
+        run: |
+          mkdir -p testcollection/roles/testrole/tasks
+          mkdir -p testcollection/plugins
+          mkdir -p testcollection/meta
+
+          # Create galaxy.yml with proper YAML formatting
+          printf '%s\n' \
+            'namespace: testns' \
+            'name: testcollection' \
+            'version: 1.0.0' \
+            'readme: README.md' \
+            'authors:' \
+            '  - Test Author' \
+            'description: Test collection for CI' \
+            'license_file: LICENSE' \
+            'tags:' \
+            '  - test' \
+            'dependencies: {}' \
+            'repository: https://github.com/test/test' \
+            > testcollection/galaxy.yml
+
+          echo '# Test Collection' > testcollection/README.md
+          echo 'This is a test collection for CI testing.' >> testcollection/README.md
+
+          echo 'MIT License' > testcollection/LICENSE
+
+          printf '%s\n' \
+            '---' \
+            '- name: Test task' \
+            '  ansible.builtin.debug:' \
+            '    msg: "Hello from test role"' \
+            > testcollection/roles/testrole/tasks/main.yml
+
+          # Verify files were created
+          echo "Created files:"
+          ls -la testcollection/
+          echo "galaxy.yml content:"
+          cat testcollection/galaxy.yml
+
+      - name: Test ansible:build-collection
+        working-directory: ansible/testcollection
+        run: |
+          task --dir . -t ../Taskfile.yaml build-collection
+          ls -la *.tar.gz
+          echo "ansible:build-collection passed"
+
+      - name: Test ansible:install-collection
+        working-directory: ansible/testcollection
+        run: |
+          TARBALL=$(ls -t *.tar.gz | head -n1)
+          task --dir . -t ../Taskfile.yaml install-collection TARBALL="$TARBALL" COLLECTION_PATH=/tmp/ansible_collections
+          # ansible-galaxy installs to COLLECTION_PATH/ansible_collections/namespace/collection
+          test -d /tmp/ansible_collections/ansible_collections/testns/testcollection || test -d /tmp/ansible_collections/testns/testcollection
+          echo "ansible:install-collection passed"
+
+      - name: Test ansible:build-install-collection
+        working-directory: ansible/testcollection
+        run: |
+          rm -f *.tar.gz
+          task --dir . -t ../Taskfile.yaml build-install-collection COLLECTION_PATH=/tmp/ansible_collections2
+          # Check either path structure (varies by ansible version)
+          test -d /tmp/ansible_collections2/ansible_collections/testns/testcollection || test -d /tmp/ansible_collections2/testns/testcollection
+          echo "ansible:build-install-collection passed"
+
+      - name: Summary
+        run: |
+          echo "All Ansible tasks tested successfully:"
+          echo "  - ansible:check-ansible"
+          echo "  - ansible:build-collection"
+          echo "  - ansible:install-collection"
+          echo "  - ansible:build-install-collection"
+          echo ""
+          echo "Tasks not tested (path structure varies by ansible version):"
+          echo "  - ansible:uninstall-collection"

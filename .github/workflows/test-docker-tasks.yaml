@@ -1,0 +1,86 @@
+---
+name: Test Docker Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docker/Taskfile.yaml"
+      - ".github/workflows/test-docker-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docker/Taskfile.yaml"
+      - ".github/workflows/test-docker-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+
+permissions:
+  contents: read
+
+jobs:
+  test-docker-tasks:
+    name: Test Docker Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test docker:check-docker
+        run: |
+          task -t Taskfile.yaml check-docker
+          echo "docker:check-docker passed"
+
+      - name: Test docker:setup-buildx
+        run: |
+          task -t Taskfile.yaml setup-buildx BUILDER_NAME=ci-test-builder
+          docker buildx inspect ci-test-builder
+          echo "docker:setup-buildx passed"
+
+      - name: Test docker:list-docker-mounts (no containers)
+        run: |
+          task -t Taskfile.yaml list-docker-mounts
+          echo "docker:list-docker-mounts passed (no containers case)"
+
+      - name: Test docker:list-docker-mounts (with container)
+        run: |
+          docker run -d --name test-container -v /tmp:/data alpine sleep 60
+          task -t Taskfile.yaml list-docker-mounts
+          docker rm -f test-container
+          echo "docker:list-docker-mounts passed (with container)"
+
+      - name: Test docker:inspect-manifest
+        run: |
+          task -t Taskfile.yaml inspect-manifest IMAGE=docker.io/library/alpine:latest
+          echo "docker:inspect-manifest passed"
+
+      - name: Test docker:clean-docker
+        run: |
+          task -t Taskfile.yaml clean-docker
+          echo "docker:clean-docker passed"
+
+      - name: Cleanup buildx builder
+        if: always()
+        run: docker buildx rm ci-test-builder || true
+
+      - name: Summary
+        run: |
+          echo "All Docker tasks tested successfully:"
+          echo "  - docker:check-docker"
+          echo "  - docker:setup-buildx"
+          echo "  - docker:list-docker-mounts"
+          echo "  - docker:inspect-manifest"
+          echo "  - docker:clean-docker"

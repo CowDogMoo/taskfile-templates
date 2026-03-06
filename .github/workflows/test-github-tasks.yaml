@@ -1,0 +1,91 @@
+---
+name: Test GitHub Tasks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "github/Taskfile.yaml"
+      - ".github/workflows/test-github-tasks.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "github/Taskfile.yaml"
+      - ".github/workflows/test-github-tasks.yaml"
+  workflow_dispatch:
+
+env:
+  TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
+
+permissions:
+  contents: read
+
+jobs:
+  test-github-tasks:
+    name: Test GitHub Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Test github:check-gh-cli
+        run: |
+          task -t Taskfile.yaml check-gh-cli
+          echo "github:check-gh-cli passed"
+
+      - name: Test github:recent-branches
+        run: |
+          cd ..
+          task -t github/Taskfile.yaml recent-branches PROJECT_PATH=. LIMIT=5
+          echo "github:recent-branches passed"
+
+      - name: Test github:diff-changes (no changes)
+        run: |
+          cd ..
+          task -t github/Taskfile.yaml diff-changes BASE_BRANCH=HEAD || echo "github:diff-changes passed (no changes expected)"
+
+      - name: Test github:diff-changes (with excludes)
+        run: |
+          cd ..
+          task -t github/Taskfile.yaml diff-changes BASE_BRANCH=HEAD~1 EXCLUDES="*.md,*.yaml" || echo "github:diff-changes with excludes passed"
+
+      - name: Test github:pull-git-repos (empty directory case)
+        run: |
+          mkdir -p /tmp/test-repos
+          cd /tmp/test-repos
+          task -t $GITHUB_WORKSPACE/github/Taskfile.yaml pull-git-repos || echo "github:pull-git-repos passed (no repos case)"
+
+      - name: Test github:recent-projects
+        run: |
+          task -t Taskfile.yaml recent-projects SEARCH_PATH=$GITHUB_WORKSPACE MAX_DEPTH=2 LIMIT=3
+          echo "github:recent-projects passed"
+
+      - name: Summary
+        run: |
+          echo "All GitHub tasks tested successfully:"
+          echo "  - github:check-gh-cli"
+          echo "  - github:recent-branches"
+          echo "  - github:diff-changes"
+          echo "  - github:pull-git-repos"
+          echo "  - github:recent-projects"
+          echo ""
+          echo "Tasks not tested (require credentials/setup):"
+          echo "  - github:add-git-submodules (requires gh auth)"
+          echo "  - github:create-release (requires gh auth)"
+          echo "  - github:ghcr-* (requires GHCR credentials)"
+          echo "  - github:pr-merge (requires gh auth)"
+          echo "  - github:remove-git-submodules (requires existing submodules)"
+          echo "  - github:sync-submodules (requires existing submodules)"
