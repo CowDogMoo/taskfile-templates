@@ -75,15 +75,15 @@ jobs:
           dependencies: {}
           repository: https://github.com/test/test
           EOF
+          sed -i 's/^          //' testcollection/galaxy.yml
 
           cat > testcollection/README.md << 'EOF'
           # Test Collection
           This is a test collection for CI testing.
           EOF
+          sed -i 's/^          //' testcollection/README.md
 
-          cat > testcollection/LICENSE << 'EOF'
-          MIT License
-          EOF
+          echo "MIT License" > testcollection/LICENSE
 
           cat > testcollection/roles/testrole/tasks/main.yml << 'EOF'
           ---
@@ -91,6 +91,7 @@ jobs:
             ansible.builtin.debug:
               msg: "Hello from test role"
           EOF
+          sed -i 's/^          //' testcollection/roles/testrole/tasks/main.yml
 
       - name: Test ansible:build-collection
         run: |

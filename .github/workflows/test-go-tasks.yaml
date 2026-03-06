@@ -54,31 +54,36 @@ jobs:
           mkdir -p testproject/cmd
           cd testproject
           go mod init testproject
-          cat > cmd/main.go << 'EOF'
+          cat > cmd/main.go << 'GOEOF'
           package main
 
           import "fmt"
 
           func main() {
-              fmt.Println("Hello, World!")
+          	fmt.Println("Hello, World!")
           }
 
           func Add(a, b int) int {
-              return a + b
+          	return a + b
           }
-          EOF
-          cat > cmd/main_test.go << 'EOF'
+          GOEOF
+          sed -i 's/^          //' cmd/main.go
+          cat > cmd/main_test.go << 'GOEOF'
           package main
 
           import "testing"
 
           func TestAdd(t *testing.T) {
-              result := Add(2, 3)
-              if result != 5 {
-                  t.Errorf("Add(2, 3) = %d; want 5", result)
-              }
+          	result := Add(2, 3)
+          	if result != 5 {
+          		t.Errorf("Add(2, 3) = %d; want 5", result)
+          	}
           }
-          EOF
+          GOEOF
+          sed -i 's/^          //' cmd/main_test.go
+          # Verify files were created correctly
+          ls -la cmd/
+          cat cmd/main.go
 
       - name: Test go:tidy
         run: |
