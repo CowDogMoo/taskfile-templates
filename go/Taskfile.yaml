@@ -126,7 +126,7 @@ tasks:
       - tidy
     cmds:
       - go install -ldflags "{{.LDFLAGS}}" {{.CMD_PATH}}
-      - echo "Installed to $(go env GOPATH)/bin/{{.BINARY_NAME}}"
+      - 'echo "Installed to $(go env GOBIN 2>/dev/null || echo "$(go env GOPATH)/bin")/{{.BINARY_NAME}}"'
 
   show-arch:
     desc: Show detected architecture and build strategy
