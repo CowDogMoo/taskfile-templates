@@ -113,6 +113,33 @@ Lists all firewall rules configured in the default site.
 task list-fw-rules
 ```
 
+### power-cycle-poe-port
+
+Power-cycles a PoE switch port. Provide a client `HOSTNAME` to auto-discover
+the switch MAC and port, or pass `SWITCH_MAC` and `PORT` directly. Defaults to
+a dry run; pass `CONFIRM=true` to actually issue the command.
+
+**Auto-discover by hostname (dry run):**
+
+```bash
+task power-cycle-poe-port HOSTNAME=k8s1
+```
+
+**Auto-discover and execute:**
+
+```bash
+task power-cycle-poe-port HOSTNAME=k8s1 CONFIRM=true
+```
+
+**Target a port directly:**
+
+```bash
+task power-cycle-poe-port SWITCH_MAC=24:5a:4c:7f:29:fb PORT=25 CONFIRM=true
+```
+
+Note: auto-discovery requires the client to be on a managed UniFi switch with
+PoE enabled on the port. Wireless or non-switched clients will error out.
+
 ## 📝 Example Usage
 
 1. **List all devices in your network:**

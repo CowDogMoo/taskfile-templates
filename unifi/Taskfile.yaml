@@ -130,6 +130,56 @@ tasks:
             -H "X-API-KEY: $API_KEY" | jq ".data | map(select(.key == \"networks\")) | .[].value[] | $FILTER"
         fi
 
+  power-cycle-poe-port:
+    desc: "Power-cycle a PoE switch port. Provide HOSTNAME to auto-discover, or SWITCH_MAC+PORT directly. Set CONFIRM=true to execute"
+    deps:
+      - check-dependencies
+    vars:
+      HOSTNAME: '{{.HOSTNAME | default ""}}'
+      SWITCH_MAC: '{{.SWITCH_MAC | default ""}}'
+      PORT: '{{.PORT | default ""}}'
+      CONFIRM: '{{.CONFIRM | default "false"}}'
+    cmds:
+      - |
+        set -euo pipefail
+        API_KEY=$(op item get "Ubiquiti Account" --reveal --fields control-plane-api-key)
+
+        SW_MAC="{{.SWITCH_MAC}}"
+        SW_PORT="{{.PORT}}"
+
+        if [ -n "{{.HOSTNAME}}" ]; then
+          CLIENT=$(curl -sk -X GET "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/stat/sta" \
+            -H "Accept: application/json" \
+            -H "X-API-KEY: $API_KEY" \
+            | jq --arg h "{{.HOSTNAME}}" '.data[] | select((.hostname // "") == $h or (.name // "") == $h)')
+          if [ -z "$CLIENT" ]; then
+            echo "Client '{{.HOSTNAME}}' not found"; exit 1
+          fi
+          SW_MAC=$(echo "$CLIENT" | jq -r '.sw_mac // empty')
+          SW_PORT=$(echo "$CLIENT" | jq -r '.sw_port // empty')
+          if [ -z "$SW_MAC" ] || [ -z "$SW_PORT" ]; then
+            echo "Client '{{.HOSTNAME}}' has no sw_mac/sw_port — not on a managed switch?"
+            echo "$CLIENT" | jq '{hostname, name, mac, ip, sw_mac, sw_port}'
+            exit 1
+          fi
+        fi
+
+        if [ -z "$SW_MAC" ] || [ -z "$SW_PORT" ]; then
+          echo "Must supply HOSTNAME, or SWITCH_MAC and PORT"; exit 1
+        fi
+
+        echo "Target: switch=$SW_MAC port=$SW_PORT (hostname='{{.HOSTNAME}}')"
+        if [ "{{.CONFIRM}}" != "true" ]; then
+          echo "Dry-run. Re-run with CONFIRM=true to power-cycle."
+          exit 0
+        fi
+
+        curl -sk -X POST "{{.UBIQUITI_BASE_URL}}/proxy/network/api/s/default/cmd/devmgr" \
+          -H "Accept: application/json" \
+          -H "Content-Type: application/json" \
+          -H "X-API-KEY: $API_KEY" \
+          -d "{\"cmd\":\"power-cycle\",\"mac\":\"$SW_MAC\",\"port_idx\":$SW_PORT}" | jq '.'
+
   list-wlans:
     desc: "List all configured wireless networks (WLANs). Use REDACT=true to mask sensitive keys and passwords"
     deps:
