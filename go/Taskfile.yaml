@@ -14,9 +14,10 @@ vars:
     sh: go env GOOS
   HOST_ARCH:
     sh: go env GOARCH
-  # Customize these for your project
-  BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
-  CMD_PATH: '{{.CMD_PATH | default "./cmd"}}'
+  # NOTE: BINARY_NAME and CMD_PATH are intentionally NOT declared here.
+  # A top-level var in an included Taskfile shadows the value the includer
+  # injects via `vars:` on the include, so defaults must live on each task
+  # via `{{.X | default "..."}}`.
 
 tasks:
   default:
@@ -29,6 +30,8 @@ tasks:
   build:
     desc: Build binary (OS=linux|darwin|windows ARCH=amd64|arm64|arm GOARM=7)
     vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
+      CMD_PATH: '{{.CMD_PATH | default "./cmd"}}'
       OS: '{{.OS | default .HOST_OS}}'
       ARCH: '{{.ARCH | default .HOST_ARCH}}'
       GOARM: '{{.GOARM | default ""}}'
@@ -70,6 +73,8 @@ tasks:
 
   clean:
     desc: Clean build artifacts
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
     cmds:
       - rm -f {{.BINARY_NAME}}
       - rm -rf dist/
@@ -90,6 +95,8 @@ tasks:
 
   coverage:
     desc: Show test coverage table and overall percentage
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
     cmds:
       - |
         go test -coverprofile=/tmp/{{.BINARY_NAME}}-cover.out ./... 2>&1 | \
@@ -122,6 +129,9 @@ tasks:
 
   install:
     desc: Install binary to GOPATH/bin
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
+      CMD_PATH: '{{.CMD_PATH | default "./cmd"}}'
     deps:
       - tidy
     cmds:
@@ -138,6 +148,8 @@ tasks:
 
   run:
     desc: Build and run binary
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
     deps:
       - build
     cmds:
@@ -145,6 +157,8 @@ tasks:
 
   dev:
     desc: Run in development mode with verbose logging
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
     deps:
       - build
     cmds:
@@ -167,6 +181,8 @@ tasks:
   # Architecture-specific CI tasks
   ci-build-native:
     desc: Build for native architecture in CI
+    vars:
+      BINARY_NAME: '{{.BINARY_NAME | default "app"}}'
     cmds:
       - echo "Building for native arch{{":"}} {{.HOST_ARCH}}"
       - task: build
