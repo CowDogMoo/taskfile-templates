@@ -18,7 +18,8 @@
   suppressNotifications: [
     'prIgnoreNotification',
   ],
-  rebaseWhen: 'conflicted',
+  // 'auto' keeps automerge PRs rebased/up-to-date; 'conflicted' left green PRs stranded.
+  rebaseWhen: 'auto',
   commitBodyTable: true,
   labels: [
     'renovate',
@@ -42,6 +43,31 @@
       ],
       automerge: true,
       automergeType: 'branch',
+    },
+    {
+      description: 'Auto merge GitHub Actions major updates',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchDatasources: [
+        'github-tags',
+      ],
+      matchUpdateTypes: [
+        'major',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+    },
+    {
+      description: 'Auto merge pre-commit hook major updates',
+      matchManagers: [
+        'pre-commit',
+      ],
+      matchUpdateTypes: [
+        'major',
+      ],
+      automerge: true,
+      automergeType: 'pr',
     },
     {
       description: 'Auto merge non-major updates for other dependencies',
