@@ -18,7 +18,7 @@ on:
 
 env:
   # renovate: datasource=golang-version depName=go
-  GO_VERSION: 1.26.9
+  GO_VERSION: 1.27.2
   # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
   GOLANGCI_LINT_VERSION: v2.14.0
   TASK_VERSION: 3.38.0
