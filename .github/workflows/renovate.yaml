@@ -35,7 +35,7 @@ concurrency:
 # Retrieve BOT_USER_ID via `curl -s "https://api.github.com/users/${BOT_USERNAME}%5Bbot%5D" | jq .id`
 env:
   # renovate: datasource=golang-version depName=go
-  GO_VERSION: 1.26.9
+  GO_VERSION: 1.27.2
   # renovate: datasource=go depName=mvdan.cc/sh/v3
   SHFMT_VERSION: v3.14.1
   # renovate: datasource=go depName=github.com/aquasecurity/tfsec
