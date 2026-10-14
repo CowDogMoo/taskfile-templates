@@ -18,7 +18,10 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: 1.25.0
+  # renovate: datasource=golang-version depName=go
+  GO_VERSION: 1.26.9
+  # renovate: datasource=go depName=mvdan.cc/sh/v3
+  SHFMT_VERSION: v3.14.1
   PYTHON_VERSION: 3.13.3
   TASK_VERSION: 3.38.0
   TASK_X_REMOTE_TASKFILES: 1
@@ -54,12 +57,12 @@ jobs:
 
       - name: Install go module dependencies
         run: |
-          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          go install mvdan.cc/sh/v3/cmd/shfmt@${{ env.SHFMT_VERSION }}
 
       - name: Setup go-task
-        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          task-version: ${{ env.TASK_VERSION }}
+          version: ${{ env.TASK_VERSION }}
 
       - name: Run pre-commit
         run: task -y run-pre-commit || true
