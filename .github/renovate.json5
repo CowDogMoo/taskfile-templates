@@ -1,33 +1,8 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    'config:recommended',
-    ':disableRateLimiting',
-    ':dependencyDashboard',
-    'docker:enableMajor',
-    ':semanticCommits',
-    ':enablePreCommit',
-    ':automergeDigest',
-    ':automergeBranch',
-    'helpers:pinGitHubActionDigests'
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'github>CowDogMoo/renovate-config',
   ],
-  dependencyDashboardLabels: [
-    'renovate-dashboard',
-  ],
-  dependencyDashboardTitle: 'Renovate Dashboard 🤖',
-  suppressNotifications: [
-    'prIgnoreNotification',
-  ],
-  // 'auto' keeps automerge PRs rebased/up-to-date; 'conflicted' left green PRs stranded.
-  rebaseWhen: 'auto',
-  commitBodyTable: true,
-  labels: [
-    'renovate',
-  ],
-  platformAutomerge: true,
-  'pre-commit': {
-    enabled: true,
-  },
   customManagers: [
     {
       description: 'Update workflow env versions annotated with a "# renovate:" comment',
@@ -38,61 +13,20 @@
       matchStrings: [
         '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+:\\s*"?(?<currentValue>[^"\\s]+)"?',
       ],
+      depTypeTemplate: 'renovate-annotation',
     },
   ],
   packageRules: [
     {
-      description: 'Auto merge GitHub Actions minor and patch updates',
-      matchManagers: [
-        'github-actions',
+      description: 'GO_VERSION and PYTHON_VERSION envs are tracked by the shared preset; skip their annotations so they are not extracted twice',
+      matchDepTypes: [
+        'renovate-annotation',
       ],
-      matchDatasources: [
-        'github-tags',
+      matchDepNames: [
+        'go',
+        'python',
       ],
-      matchUpdateTypes: [
-        'minor',
-        'patch',
-      ],
-      automerge: true,
-      automergeType: 'branch',
+      enabled: false,
     },
-    {
-      description: 'Auto merge GitHub Actions major updates',
-      matchManagers: [
-        'github-actions',
-      ],
-      matchDatasources: [
-        'github-tags',
-      ],
-      matchUpdateTypes: [
-        'major',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-    },
-    {
-      description: 'Auto merge pre-commit hook major updates',
-      matchManagers: [
-        'pre-commit',
-      ],
-      matchUpdateTypes: [
-        'major',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-    },
-    {
-      description: 'Auto merge non-major updates for other dependencies',
-      matchUpdateTypes: [
-        'minor',
-        'patch',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      matchManagers: [
-        'pre-commit',
-        'custom.regex',
-      ],
-    },
-  ]
+  ],
 }
