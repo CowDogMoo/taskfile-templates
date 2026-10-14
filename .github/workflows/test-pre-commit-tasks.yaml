@@ -19,7 +19,7 @@ on:
 env:
   TASK_VERSION: 3.38.0
   TASK_X_REMOTE_TASKFILES: 1
-  PYTHON_VERSION: 3.13.3
+  PYTHON_VERSION: 3.14.8
 
 permissions:
   contents: read
