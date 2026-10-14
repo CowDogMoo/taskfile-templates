@@ -89,7 +89,6 @@
       ],
       automerge: true,
       automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
       matchManagers: [
         'pre-commit',
         'custom.regex',
