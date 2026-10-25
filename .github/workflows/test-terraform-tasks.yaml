@@ -21,7 +21,7 @@ env:
   TASK_X_REMOTE_TASKFILES: 1
   TF_VERSION: 1.9.0
   # renovate: datasource=github-releases depName=terraform-linters/tflint
-  TFLINT_VERSION: v0.64.0
+  TFLINT_VERSION: v0.65.0
 
 permissions:
   contents: read
